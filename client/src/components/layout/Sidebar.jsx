@@ -6,11 +6,11 @@ const Sidebar = () => {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
-
+  
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">🔒 SecureBank</div>

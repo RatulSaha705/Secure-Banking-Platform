@@ -3,7 +3,9 @@
 /**
  * server/src/controllers/authController.js
  *
- * Feature 9 auth HTTP layer.
+ * Auth HTTP layer.
+ * Access token is returned only after OTP verification.
+ * Refresh token is stored only as an HTTP-only cookie.
  */
 
 const {
@@ -12,6 +14,16 @@ const {
   loginUser,
   completeLoginWithOtp,
 } = require('../services/authService');
+
+const {
+  getRefreshTokenFromRequest,
+  rotateRefreshSession,
+  touchSessionActivity,
+  revokeRefreshSession,
+  revokeSessionById,
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie,
+} = require('../services/tokenService');
 
 const logger = require('../utils/logger');
 
@@ -131,14 +143,19 @@ const verifyLogin = async (req, res, next) => {
       challengeId,
       userId,
       otp,
+      req,
     });
 
-    logger.info(`Login 2FA verified for user: ${result.user.id}`);
+    setRefreshTokenCookie(res, result.refreshToken);
+
+    logger.info(`Login 2FA verified and session created for user: ${result.user.id}`);
 
     return res.status(200).json({
       success: true,
       message: 'Login verified successfully.',
       accessToken: result.accessToken,
+      sessionExpiresAt: result.sessionExpiresAt,
+      idleExpiresAt: result.idleExpiresAt,
       user: result.user,
     });
   } catch (err) {
@@ -147,9 +164,96 @@ const verifyLogin = async (req, res, next) => {
   }
 };
 
+const refresh = async (req, res, next) => {
+  try {
+    const refreshToken = getRefreshTokenFromRequest(req);
+
+    if (!refreshToken) {
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh session not found',
+      });
+    }
+
+    const result = await rotateRefreshSession({ refreshToken, req });
+
+    setRefreshTokenCookie(res, result.refreshToken);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Session refreshed successfully.',
+      accessToken: result.accessToken,
+      sessionExpiresAt: result.sessionExpiresAt,
+      idleExpiresAt: result.idleExpiresAt,
+      user: result.user,
+    });
+  } catch (err) {
+    clearRefreshTokenCookie(res);
+    if (err.statusCode) return sendError(res, err);
+    return next(err);
+  }
+};
+
+const activity = async (req, res, next) => {
+  try {
+    const result = await touchSessionActivity({
+      sessionId: req.user.sessionId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Session activity updated.',
+      lastActivityAt: result.lastActivityAt,
+      idleExpiresAt: result.idleExpiresAt,
+    });
+  } catch (err) {
+    if (err.statusCode) return sendError(res, err);
+    return next(err);
+  }
+};
+
+const logout = async (req, res, next) => {
+  try {
+    const refreshToken = getRefreshTokenFromRequest(req);
+
+    if (refreshToken) {
+      await revokeRefreshSession({ refreshToken, reason: 'LOGOUT' });
+    }
+
+    if (req.user?.sessionId) {
+      await revokeSessionById({ sessionId: req.user.sessionId, reason: 'LOGOUT' });
+    }
+
+    clearRefreshTokenCookie(res);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged out successfully.',
+    });
+  } catch (err) {
+    clearRefreshTokenCookie(res);
+    if (err.statusCode) return sendError(res, err);
+    return next(err);
+  }
+};
+
+const me = async (req, res) => {
+  return res.status(200).json({
+    success: true,
+    user: {
+      id: req.user.id,
+      role: req.user.role,
+    },
+  });
+};
+
 module.exports = {
   register,
   verifyRegistration,
   login,
   verifyLogin,
+  refresh,
+  activity,
+  logout,
+  me,
 };
