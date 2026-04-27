@@ -5,9 +5,8 @@
  *
  * Field-level encryption wrapper for the secure banking project.
  *
- * This module chooses RSA or ECC based on the active key metadata returned
- * by key.service.js. It does not use AES or any built-in encryption method.
- *
+* This module chooses RSA or ECC based on the active key metadata returned
+* by key.service.js. Encryption/decryption is delegated only to custom RSA/ECC modules.
  * Stored encrypted field shape:
  *   {
  *     protected: true,

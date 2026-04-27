@@ -34,7 +34,7 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const PendingRegistration = require('../models/PendingRegistration');
 
-const { hashPassword, comparePassword } = require('./passwordService');
+const { hashPassword, comparePassword } = require('../security/password');
 const {
   computeEmailLookupHash,
   computeUsernameLookupHash,

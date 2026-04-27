@@ -8,8 +8,8 @@
  * This module is the central encryption/decryption service for the project.
  * It enforces the required RSA/ECC split from encryptionPolicy.js.
  *
- * It does NOT use AES or Node built-in encryption functions.
- * It uses your custom RSA and ECC modules.
+* It uses only your custom RSA and ECC modules for encryption/decryption.
+* It does not call built-in encryption/decryption functions.
  */
 
 const {
