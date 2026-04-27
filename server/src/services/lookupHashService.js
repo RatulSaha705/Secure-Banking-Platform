@@ -1,54 +1,44 @@
 'use strict';
 
 /**
- * services/lookupHashService.js — Deterministic HMAC Lookup Hashes
+ * server/src/services/lookupHashService.js
  *
- * PURPOSE:
- *   Because encrypted fields (encEmail, encUsername) cannot be queried
- *   directly in MongoDB (ciphertext differs per encryption), we store a
- *   separate non-reversible hash of the normalized plaintext.
+ * Feature 1 lookup hash service.
  *
- * HOW IT WORKS:
- *   hash = HMAC-SHA256( LOOKUP_HASH_SECRET, normalize(value) )
+ * Because email and username are encrypted, MongoDB cannot search them by
+ * plaintext. So registration/login use deterministic lookup hashes:
  *
- *   - HMAC with a secret key prevents rainbow-table / precomputed attacks.
- *   - Deterministic: same input always produces the same hash.
- *   - One-way: hash cannot be reversed to recover the plaintext.
- *   - normalize() lowercases and trims so "User@Mail.com" === "user@mail.com".
+ *   emailLookupHash = HMAC(LOOKUP_HASH_SECRET, normalizedEmail)
+ *   usernameLookupHash = HMAC(LOOKUP_HASH_SECRET, normalizedUsername)
  *
- * EXTENSION PATH (Phase 2):
- *   Replace Node's crypto.createHmac with the from-scratch HMAC-SHA256
- *   implementation being built in crypto/macIntegrity.js.
+ * This uses your custom HMAC-SHA256-LAB implementation through
+ * security/hash/passwordHash.js. It does not use crypto.createHmac.
  */
 
-const crypto = require('crypto');
+const { createLookupHash } = require('../security/hash/passwordHash');
 
-const getLookupKey = () => {
-  const key = process.env.LOOKUP_HASH_SECRET;
-  if (!key) throw new Error('LOOKUP_HASH_SECRET is not set in environment');
-  return key;
+const getLookupSecret = () => {
+  const secret = process.env.LOOKUP_HASH_SECRET;
+
+  if (!secret) {
+    throw new Error('LOOKUP_HASH_SECRET is not set in server/.env');
+  }
+
+  return secret;
 };
 
-/**
- * normalize
- * Trims and lowercases the input for consistent hashing.
- *
- * @param {string} value
- * @returns {string}
- */
-const normalize = (value) => (value || '').trim().toLowerCase();
+const normalize = (value) => String(value || '').trim().toLowerCase();
 
-/**
- * computeLookupHash
- * Computes a deterministic HMAC-SHA256 hash of the normalized input.
- *
- * @param {string} value - Plaintext value to hash (e.g. email, username)
- * @returns {string} Hex-encoded HMAC digest
- */
 const computeLookupHash = (value) => {
-  const key = getLookupKey();
-  const normalized = normalize(value);
-  return crypto.createHmac('sha256', key).update(normalized).digest('hex');
+  return createLookupHash(getLookupSecret(), normalize(value));
 };
 
-module.exports = { computeLookupHash, normalize };
+const computeEmailLookupHash = (email) => computeLookupHash(email);
+const computeUsernameLookupHash = (username) => computeLookupHash(username);
+
+module.exports = {
+  normalize,
+  computeLookupHash,
+  computeEmailLookupHash,
+  computeUsernameLookupHash,
+};

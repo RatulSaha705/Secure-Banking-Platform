@@ -1,25 +1,22 @@
 'use strict';
 
 /**
- * validators/authValidator.js — Input Validation Rules for Auth Routes
+ * server/src/validators/authValidator.js
  *
- * Uses express-validator to validate and sanitize request bodies.
- * Returns a 400 with structured error messages on failure.
- *
- * EXTENSION PATH:
- *   Add more validators (changePassword, updateProfile) as new features
- *   are added in later phases.
+ * Feature 9 validation:
+ *   - register
+ *   - register/verify
+ *   - login
+ *   - login/verify
  */
 
 const { body, validationResult } = require('express-validator');
-
-// ── Register Validation ───────────────────────────────────────────────────────
 
 const registerRules = [
   body('username')
     .trim()
     .notEmpty().withMessage('Username is required')
-    .isLength({ min: 3, max: 30 }).withMessage('Username must be 3–30 characters')
+    .isLength({ min: 3, max: 30 }).withMessage('Username must be 3-30 characters')
     .matches(/^[a-zA-Z0-9_]+$/).withMessage('Username can only contain letters, numbers, and underscores'),
 
   body('email')
@@ -32,48 +29,105 @@ const registerRules = [
     .notEmpty().withMessage('Password is required')
     .isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
 
-  body('fullName')
+  body('contact')
     .optional({ checkFalsy: true })
     .trim()
-    .isLength({ max: 100 }).withMessage('Full name must be at most 100 characters'),
+    .isLength({ max: 30 }).withMessage('Contact must be at most 30 characters'),
 
   body('phone')
     .optional({ checkFalsy: true })
     .trim()
-    .isLength({ max: 20 }).withMessage('Phone number must be at most 20 characters'),
+    .isLength({ max: 30 }).withMessage('Phone number must be at most 30 characters'),
+
+  body('fullName')
+    .optional({ checkFalsy: true })
+    .trim()
+    .isLength({ max: 100 }).withMessage('Full name must be at most 100 characters'),
 ];
 
-// ── Login Validation ──────────────────────────────────────────────────────────
+const verifyRegistrationRules = [
+  body('pendingRegistrationId')
+    .trim()
+    .notEmpty().withMessage('pendingRegistrationId is required'),
+
+  body('challengeId')
+    .trim()
+    .notEmpty().withMessage('challengeId is required'),
+
+  body('otp')
+    .trim()
+    .notEmpty().withMessage('OTP is required')
+    .isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits')
+    .isNumeric().withMessage('OTP must contain only numbers'),
+];
 
 const loginRules = [
-  body('email')
+  body().custom((value) => {
+    const identifier = value.identifier || value.email || value.username;
+
+    if (!identifier || !String(identifier).trim()) {
+      throw new Error('Email or username is required');
+    }
+
+    return true;
+  }),
+
+  body('identifier')
+    .optional({ checkFalsy: true })
     .trim()
-    .notEmpty().withMessage('Email is required')
-    .isEmail().withMessage('A valid email address is required')
-    .normalizeEmail(),
+    .isLength({ min: 3 }).withMessage('Identifier must be at least 3 characters'),
+
+  body('email')
+    .optional({ checkFalsy: true })
+    .trim()
+    .isLength({ min: 3 }).withMessage('Email must be at least 3 characters'),
+
+  body('username')
+    .optional({ checkFalsy: true })
+    .trim()
+    .isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
 
   body('password')
     .notEmpty().withMessage('Password is required'),
 ];
 
-// ── handleValidation middleware ───────────────────────────────────────────────
+const verifyLoginRules = [
+  body('challengeId')
+    .trim()
+    .notEmpty().withMessage('challengeId is required'),
 
-/**
- * handleValidation
- * Express middleware. If any validation rule above fails, returns 400
- * with a structured array of error messages.
- * Used as the second middleware after the rule array in routes.
- */
+  body('userId')
+    .trim()
+    .notEmpty().withMessage('userId is required'),
+
+  body('otp')
+    .trim()
+    .notEmpty().withMessage('OTP is required')
+    .isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits')
+    .isNumeric().withMessage('OTP must contain only numbers'),
+];
+
 const handleValidation = (req, res, next) => {
   const errors = validationResult(req);
+
   if (!errors.isEmpty()) {
     return res.status(400).json({
       success: false,
       message: 'Validation failed',
-      errors: errors.array().map((e) => ({ field: e.path, message: e.msg })),
+      errors: errors.array().map((error) => ({
+        field: error.path,
+        message: error.msg,
+      })),
     });
   }
-  next();
+
+  return next();
 };
 
-module.exports = { registerRules, loginRules, handleValidation };
+module.exports = {
+  registerRules,
+  verifyRegistrationRules,
+  loginRules,
+  verifyLoginRules,
+  handleValidation,
+};

@@ -1,55 +1,56 @@
 'use strict';
 
 /**
- * models/User.js — User Schema (Phase 1: Registration & Login)
+ * server/src/models/User.js
  *
- * SECURITY DESIGN:
- *   - Sensitive PII fields (username, email, fullName, phone) are stored
- *     as ciphertext (enc_*) so raw DB access reveals nothing.
- *   - Each encrypted field has a paired MAC tag (mac_*) to detect tampering
- *     before any decryption attempt.
- *   - For efficient exact-match lookups (uniqueness check, login by email),
- *     we store a non-reversible HMAC-SHA256 hash (lookupHash) that is
- *     deterministic for the same input but cannot be reversed to plaintext.
- *   - Passwords are hashed with bcrypt (cost factor 12), never stored plaintext.
+ * Feature 1: Refactored User Registration Schema
  *
- * EXTENSION PATH:
- *   Phase 2 → replace fieldEncryptionService stub with real RSA/AES encryption.
- *   Phase 3 → add 2FA fields (twoFactorEnabled, twoFactorSecret).
- *   Phase 4 → add role-based fields, profile, account status.
+ * Password:
+ *   - NEVER encrypted
+ *   - NEVER stored as plaintext
+ *   - stored only as salted custom PBKDF-style hash fields
+ *
+ * Sensitive user fields:
+ *   - username, email, contact, fullName, phone are encrypted envelope objects
+ *   - envelopes include algorithm, keyId, ciphertext, MAC, version, createdAt
+ *
+ * Lookup:
+ *   - emailLookupHash and usernameLookupHash are deterministic custom HMAC hashes
+ *   - login/duplicate-check use lookup hashes because email/username are encrypted
  */
 
 const mongoose = require('mongoose');
 
+const encryptedEnvelopeSchemaType = mongoose.Schema.Types.Mixed;
+
 const userSchema = new mongoose.Schema(
   {
-    // ── Password ────────────────────────────────────────────────────────────────
     passwordHash: {
       type: String,
       required: true,
       select: false,
     },
-    
+
     passwordSalt: {
       type: String,
       required: true,
       select: false,
     },
-    
+
     passwordIterations: {
       type: Number,
       required: true,
       default: 10000,
       select: false,
     },
-    
+
     passwordHashAlgorithm: {
       type: String,
       required: true,
       default: 'PBKDF2-HMAC-SHA256-LAB',
       select: false,
     },
-    
+
     passwordHashBytes: {
       type: Number,
       required: true,
@@ -57,36 +58,65 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
 
-    // ── Encrypted PII (ciphertext, base64-encoded) ──────────────────────────────
-    // Encrypted with fieldEncryptionService. Phase 2: swap to RSA/AES from scratch.
-    encUsername: { type: String, required: true },
-    encEmail:    { type: String, required: true },
-    encFullName: { type: String, default: null },
-    encPhone:    { type: String, default: null },
+    username: {
+      type: encryptedEnvelopeSchemaType,
+      required: true,
+    },
 
-    // ── MAC Integrity Tags (HMAC-SHA256 over ciphertext) ────────────────────────
-    // Verified before each decryption attempt to detect DB-level tampering.
-    macUsername: { type: String, required: true },
-    macEmail:    { type: String, required: true },
-    macFullName: { type: String, default: null },
-    macPhone:    { type: String, default: null },
+    email: {
+      type: encryptedEnvelopeSchemaType,
+      required: true,
+    },
 
-    // ── Lookup Hashes (HMAC-SHA256 of normalized plaintext) ─────────────────────
-    // Non-reversible. Used ONLY for uniqueness checks and login lookup.
-    // Unique index ensures no two users can share an email or username.
-    emailLookupHash:    { type: String, required: true, unique: true },
-    usernameLookupHash: { type: String, required: true, unique: true },
+    contact: {
+      type: encryptedEnvelopeSchemaType,
+      default: null,
+    },
 
-    // ── Role ─────────────────────────────────────────────────────────────────────
+    fullName: {
+      type: encryptedEnvelopeSchemaType,
+      default: null,
+    },
+
+    phone: {
+      type: encryptedEnvelopeSchemaType,
+      default: null,
+    },
+
+    emailLookupHash: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+
+    usernameLookupHash: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+
     role: {
       type: String,
       enum: ['user', 'admin'],
       default: 'user',
     },
+
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+
+    twoFactorEnabled: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
+    strict: true,
   }
 );
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = mongoose.models.User || mongoose.model('User', userSchema);

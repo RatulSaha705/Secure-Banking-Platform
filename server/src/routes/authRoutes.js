@@ -1,22 +1,37 @@
 'use strict';
 
 /**
- * routes/authRoutes.js — Authentication Routes
+ * server/src/routes/authRoutes.js
  *
- * POST /api/auth/register  → validate → register
- * POST /api/auth/login     → validate → login
- *
- * Validation runs BEFORE the controller.
- * If validation fails, handleValidation returns 400 immediately.
+ * Auth endpoints:
+ *   POST /api/auth/register
+ *   POST /api/auth/register/verify
+ *   POST /api/auth/login
+ *   POST /api/auth/login/verify
  */
 
-const express  = require('express');
-const router   = express.Router();
+const express = require('express');
+const router = express.Router();
 
-const { register, login }                    = require('../controllers/authController');
-const { registerRules, loginRules, handleValidation } = require('../validators/authValidator');
+const {
+  register,
+  verifyRegistration,
+  login,
+  verifyLogin,
+} = require('../controllers/authController');
+
+const {
+  registerRules,
+  verifyRegistrationRules,
+  loginRules,
+  verifyLoginRules,
+  handleValidation,
+} = require('../validators/authValidator');
 
 router.post('/register', registerRules, handleValidation, register);
-router.post('/login',    loginRules,    handleValidation, login);
+router.post('/register/verify', verifyRegistrationRules, handleValidation, verifyRegistration);
+
+router.post('/login', loginRules, handleValidation, login);
+router.post('/login/verify', verifyLoginRules, handleValidation, verifyLogin);
 
 module.exports = router;

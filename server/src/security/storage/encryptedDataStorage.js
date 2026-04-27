@@ -3,14 +3,17 @@
 /**
  * server/src/security/storage/encryptedDataStorage.js
  *
- * Feature 18 + Feature 19:
- * Encrypted Data Storage + MAC Integrity Verification
+ * Feature 18 + Feature 19 storage wrapper.
  *
- * Main reusable API:
+ * Main API:
  *   encryptSensitiveFields(modelName, data, options)
  *   decryptSensitiveFields(modelName, encryptedData, options)
  *
- * Controllers should not manually encrypt field by field.
+ * This module:
+ *   - encrypts sensitive fields before MongoDB save
+ *   - adds MAC integrity protection
+ *   - verifies MAC before decrypting
+ *   - uses RSA/ECC through the dual asymmetric encryption module
  */
 
 const {
@@ -58,20 +61,27 @@ const clonePlainObject = (value) => {
 };
 
 const getDocumentId = (document, explicitDocumentId) => {
-  if (explicitDocumentId) return String(explicitDocumentId);
+  if (explicitDocumentId !== undefined && explicitDocumentId !== null) {
+    return String(explicitDocumentId);
+  }
+
   if (!document || typeof document !== 'object') return '';
 
   return String(document._id || document.id || '');
 };
 
 const getOwnerId = (document, explicitOwnerId) => {
-  if (explicitOwnerId) return String(explicitOwnerId);
+  if (explicitOwnerId !== undefined && explicitOwnerId !== null) {
+    return String(explicitOwnerId);
+  }
+
   if (!document || typeof document !== 'object') return '';
 
   return String(
     document.ownerId ||
     document.userId ||
     document.createdBy ||
+    document.emailLookupHash ||
     document._id ||
     ''
   );
@@ -91,10 +101,6 @@ const buildStorageContext = ({
   documentId: documentId ? String(documentId) : '',
 });
 
-/**
- * Internal helper.
- * Usually call encryptSensitiveFields instead.
- */
 const encryptFieldForStorage = async (value, dataType, context = {}) => {
   if (value === undefined) return undefined;
   if (isEncryptedStorageEnvelope(value)) return value;
@@ -108,25 +114,15 @@ const encryptFieldForStorage = async (value, dataType, context = {}) => {
 
   const envelope = {
     ...encrypted,
-
     storageType: STORAGE_TYPE,
     storageEnvelopeVersion: STORAGE_ENVELOPE_VERSION,
-
-    // Required project-style field name
     version: encrypted.keyVersion,
-
     macAlgorithm: MAC_ALGORITHM,
   };
 
   return attachMacToEncryptedField(envelope, context);
 };
 
-/**
- * This is the function you could not find.
- *
- * It is inside encryptedDataStorage.js.
- * It verifies MAC before decrypting.
- */
 const decryptFieldFromStorage = async (encryptedField, context = {}) => {
   if (encryptedField === undefined) return undefined;
   if (encryptedField === null) return null;
@@ -140,12 +136,6 @@ const decryptFieldFromStorage = async (encryptedField, context = {}) => {
   return decryptValue(encryptedField);
 };
 
-/**
- * Main wrapper for saving data.
- *
- * Example:
- *   await encryptSensitiveFields('USER', req.body)
- */
 const encryptSensitiveFields = async (modelName, data, options = {}) => {
   if (!data || typeof data !== 'object') return data;
 
@@ -177,12 +167,6 @@ const encryptSensitiveFields = async (modelName, data, options = {}) => {
   return output;
 };
 
-/**
- * Main wrapper for reading data.
- *
- * Example:
- *   await decryptSensitiveFields('USER', userFromDb)
- */
 const decryptSensitiveFields = async (modelName, encryptedData, options = {}) => {
   if (!encryptedData || typeof encryptedData !== 'object') return encryptedData;
 
@@ -238,7 +222,6 @@ const decryptManySensitiveFields = async (modelName, records, options = {}) => {
   return output;
 };
 
-// Compatibility function for test files.
 const verifyStorageMac = (envelope, context = {}) => {
   return verifyEncryptedFieldMac(envelope, context);
 };
