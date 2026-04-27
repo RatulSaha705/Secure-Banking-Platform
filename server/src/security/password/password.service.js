@@ -8,8 +8,8 @@
  * This service uses the custom PBKDF-style password hashing implementation
  * from server/src/security/hash/passwordHash.js.
  *
- * It does NOT use bcrypt.
- * It does NOT encrypt passwords.
+ * Passwords are never encrypted.
+ * Passwords are stored only as salt + derived hash metadata.
  */
 
 const {
