@@ -3,11 +3,14 @@
 /**
  * server/src/security/storage/encryptedDataStorage.js
  *
- * Feature 18: Encrypted Data Storage Module
+ * Feature 18 + Feature 19:
+ * Encrypted Data Storage + MAC Integrity Verification
  *
  * Main reusable API:
  *   encryptSensitiveFields(modelName, data, options)
  *   decryptSensitiveFields(modelName, encryptedData, options)
+ *
+ * Controllers should not manually encrypt field by field.
  */
 
 const {
@@ -16,9 +19,10 @@ const {
 } = require('../encryption');
 
 const {
-  createRecordMac,
-  verifyRecordMac,
-} = require('../hash/hmac');
+  attachMacToEncryptedField,
+  assertEncryptedFieldMacValid,
+  verifyEncryptedFieldMac,
+} = require('../integrity');
 
 const {
   getStoragePolicy,
@@ -29,21 +33,6 @@ const {
 const STORAGE_ENVELOPE_VERSION = 1;
 const STORAGE_TYPE = 'ENCRYPTED_FIELD';
 const MAC_ALGORITHM = 'HMAC-SHA256-LAB';
-
-const MAC_ENV_NAMES = Object.freeze([
-  'SECURITY_MAC_MASTER_KEY',
-  'HMAC_MASTER_KEY',
-]);
-
-const getMacMasterKey = () => {
-  for (const envName of MAC_ENV_NAMES) {
-    if (process.env[envName]) return process.env[envName];
-  }
-
-  throw new Error(
-    'Missing MAC master key. Add SECURITY_MAC_MASTER_KEY to server/.env.'
-  );
-};
 
 const isEncryptedStorageEnvelope = (value) => {
   return Boolean(
@@ -102,37 +91,10 @@ const buildStorageContext = ({
   documentId: documentId ? String(documentId) : '',
 });
 
-const buildMacParts = (envelope, context = {}) => [
-  'encrypted-storage-field-v1',
-  context.modelName || '',
-  context.collectionName || '',
-  context.fieldName || '',
-  context.ownerId || '',
-  context.documentId || '',
-  envelope.dataType || '',
-  envelope.algorithm || '',
-  envelope.keyPurpose || '',
-  envelope.keyId || '',
-  envelope.version || '',
-  envelope.ciphertext || '',
-  envelope.createdAt || '',
-];
-
-const createStorageMac = (envelope, context = {}) => {
-  return createRecordMac(getMacMasterKey(), buildMacParts(envelope, context));
-};
-
-const verifyStorageMac = (envelope, context = {}) => {
-  if (!envelope || typeof envelope !== 'object') return false;
-  if (!envelope.mac) return false;
-
-  return verifyRecordMac(
-    getMacMasterKey(),
-    buildMacParts(envelope, context),
-    envelope.mac
-  );
-};
-
+/**
+ * Internal helper.
+ * Usually call encryptSensitiveFields instead.
+ */
 const encryptFieldForStorage = async (value, dataType, context = {}) => {
   if (value === undefined) return undefined;
   if (isEncryptedStorageEnvelope(value)) return value;
@@ -150,17 +112,21 @@ const encryptFieldForStorage = async (value, dataType, context = {}) => {
     storageType: STORAGE_TYPE,
     storageEnvelopeVersion: STORAGE_ENVELOPE_VERSION,
 
-    // Required project-style field name:
+    // Required project-style field name
     version: encrypted.keyVersion,
 
     macAlgorithm: MAC_ALGORITHM,
   };
 
-  envelope.mac = createStorageMac(envelope, context);
-
-  return envelope;
+  return attachMacToEncryptedField(envelope, context);
 };
 
+/**
+ * This is the function you could not find.
+ *
+ * It is inside encryptedDataStorage.js.
+ * It verifies MAC before decrypting.
+ */
 const decryptFieldFromStorage = async (encryptedField, context = {}) => {
   if (encryptedField === undefined) return undefined;
   if (encryptedField === null) return null;
@@ -169,17 +135,17 @@ const decryptFieldFromStorage = async (encryptedField, context = {}) => {
     return encryptedField;
   }
 
-  const isValid = verifyStorageMac(encryptedField, context);
-
-  if (!isValid) {
-    throw new Error(
-      `Encrypted storage MAC verification failed for ${context.modelName || 'model'}.${context.fieldName || 'field'}`
-    );
-  }
+  assertEncryptedFieldMacValid(encryptedField, context);
 
   return decryptValue(encryptedField);
 };
 
+/**
+ * Main wrapper for saving data.
+ *
+ * Example:
+ *   await encryptSensitiveFields('USER', req.body)
+ */
 const encryptSensitiveFields = async (modelName, data, options = {}) => {
   if (!data || typeof data !== 'object') return data;
 
@@ -211,6 +177,12 @@ const encryptSensitiveFields = async (modelName, data, options = {}) => {
   return output;
 };
 
+/**
+ * Main wrapper for reading data.
+ *
+ * Example:
+ *   await decryptSensitiveFields('USER', userFromDb)
+ */
 const decryptSensitiveFields = async (modelName, encryptedData, options = {}) => {
   if (!encryptedData || typeof encryptedData !== 'object') return encryptedData;
 
@@ -266,17 +238,18 @@ const decryptManySensitiveFields = async (modelName, records, options = {}) => {
   return output;
 };
 
+// Compatibility function for test files.
+const verifyStorageMac = (envelope, context = {}) => {
+  return verifyEncryptedFieldMac(envelope, context);
+};
+
 module.exports = {
   STORAGE_ENVELOPE_VERSION,
   STORAGE_TYPE,
   MAC_ALGORITHM,
-  MAC_ENV_NAMES,
 
   isEncryptedStorageEnvelope,
   buildStorageContext,
-  buildMacParts,
-  createStorageMac,
-  verifyStorageMac,
 
   encryptFieldForStorage,
   decryptFieldFromStorage,
@@ -285,4 +258,6 @@ module.exports = {
   decryptSensitiveFields,
   encryptManySensitiveFields,
   decryptManySensitiveFields,
+
+  verifyStorageMac,
 };
