@@ -60,7 +60,7 @@ const registerUser = async ({ username, email, password, fullName, phone }) => {
     throw err;
   }
 
-  const passwordHash = await hashPassword(password);
+  const passwordFields = await hashPassword(password);
 
   const encryptedFields = encryptUserFields({
     username: cleanUsername,
@@ -71,7 +71,7 @@ const registerUser = async ({ username, email, password, fullName, phone }) => {
 
   try {
     const user = await User.create({
-      passwordHash,
+      ...passwordFields,
       emailLookupHash,
       usernameLookupHash,
       ...encryptedFields,
@@ -111,7 +111,9 @@ const loginUser = async ({ email, password }) => {
   const cleanEmail = normalize(email);
   const emailLookupHash = computeLookupHash(cleanEmail);
 
-  const user = await User.findOne({ emailLookupHash }).select('+passwordHash');
+  const user = await User.findOne({ emailLookupHash }).select(
+    '+passwordHash +passwordSalt +passwordIterations +passwordHashAlgorithm +passwordHashBytes'
+  );
 
   // Same error for both "not found" and "wrong password"
   if (!user) {
@@ -120,7 +122,7 @@ const loginUser = async ({ email, password }) => {
     throw err;
   }
 
-  const passwordValid = await comparePassword(password, user.passwordHash);
+  const passwordValid = await comparePassword(password, user);
 
   if (!passwordValid) {
     const err = new Error('Invalid email or password');

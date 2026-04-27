@@ -24,10 +24,36 @@ const mongoose = require('mongoose');
 const userSchema = new mongoose.Schema(
   {
     // ── Password ────────────────────────────────────────────────────────────────
-    // bcrypt hash+salt — select:false so it is never returned by default queries
     passwordHash: {
       type: String,
       required: true,
+      select: false,
+    },
+    
+    passwordSalt: {
+      type: String,
+      required: true,
+      select: false,
+    },
+    
+    passwordIterations: {
+      type: Number,
+      required: true,
+      default: 10000,
+      select: false,
+    },
+    
+    passwordHashAlgorithm: {
+      type: String,
+      required: true,
+      default: 'PBKDF2-HMAC-SHA256-LAB',
+      select: false,
+    },
+    
+    passwordHashBytes: {
+      type: Number,
+      required: true,
+      default: 32,
       select: false,
     },
 
