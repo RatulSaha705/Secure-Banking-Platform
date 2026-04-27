@@ -1,19 +1,12 @@
 'use strict';
 
 /**
- * security/keys/key.model.js
+ * server/src/security/keys/key.model.js
  *
- * MongoDB model for public key metadata only.
+ * Feature 17: Key Management Module
  *
- * IMPORTANT:
- *   Private keys must never be stored in MongoDB.
- *   This schema intentionally stores only:
- *     - key id
- *     - algorithm
- *     - purpose
- *     - public key
- *     - version/status metadata
- *     - the name of the environment variable that contains private keys
+ * MongoDB stores public keys and key metadata only.
+ * Private keys are NOT stored in MongoDB.
  */
 
 const mongoose = require('mongoose');
@@ -24,8 +17,8 @@ const KEY_PURPOSES = Object.freeze([
   'USER_PROFILE',
   'ACCOUNT_DATA',
   'BENEFICIARY_DATA',
-  'SUPPORT_TICKET',
   'TRANSACTION_DATA',
+  'SUPPORT_TICKET',
   'NOTIFICATION',
   'TEST',
 ]);
@@ -86,6 +79,12 @@ const cryptoKeySchema = new mongoose.Schema(
       trim: true,
     },
 
+    usage: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
     activatedAt: {
       type: Date,
       default: null,
@@ -106,7 +105,7 @@ const cryptoKeySchema = new mongoose.Schema(
       type: String,
       default: '',
       trim: true,
-      maxlength: 500,
+      maxlength: 1000,
     },
   },
   {
@@ -117,16 +116,12 @@ const cryptoKeySchema = new mongoose.Schema(
 
 cryptoKeySchema.index(
   { algorithm: 1, purpose: 1, status: 1 },
-  {
-    name: 'algorithm_purpose_status_idx',
-  }
+  { name: 'algorithm_purpose_status_idx' }
 );
 
 cryptoKeySchema.index(
   { algorithm: 1, purpose: 1, version: -1 },
-  {
-    name: 'algorithm_purpose_version_idx',
-  }
+  { name: 'algorithm_purpose_version_idx' }
 );
 
 cryptoKeySchema.index(
@@ -134,19 +129,26 @@ cryptoKeySchema.index(
   {
     unique: true,
     partialFilterExpression: { status: 'ACTIVE' },
-    name: 'one_active_key_per_algorithm_and_purpose',
+    name: 'one_active_key_per_algorithm_purpose',
   }
 );
 
 cryptoKeySchema.pre('validate', function preventPrivateKeyStorage(next) {
   const raw = this.toObject({ depopulate: true });
 
-  if (
-    Object.prototype.hasOwnProperty.call(raw, 'privateKey') ||
-    Object.prototype.hasOwnProperty.call(raw, 'secretKey') ||
-    Object.prototype.hasOwnProperty.call(raw, 'd')
-  ) {
-    return next(new Error('Private key material must not be stored in MongoDB'));
+  const forbiddenNames = [
+    'privateKey',
+    'secretKey',
+    'd',
+    'p',
+    'q',
+    'lambdaN',
+  ];
+
+  for (const name of forbiddenNames) {
+    if (Object.prototype.hasOwnProperty.call(raw, name)) {
+      return next(new Error(`Private key field "${name}" must not be stored in MongoDB`));
+    }
   }
 
   return next();

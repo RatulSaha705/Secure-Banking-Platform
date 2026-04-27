@@ -29,6 +29,7 @@ const authRoutes     = require('./routes/authRoutes');
 const rateLimiter    = require('./middleware/rateLimiter');
 const logger         = require('./utils/logger');
 const { notFoundHandler, globalErrorHandler } = require('./middleware/errorMiddleware');
+const keyRoutes = require('./routes/keyRoutes');
 
 // ── Express app ───────────────────────────────────────────────────────────────
 const app = express();
@@ -58,6 +59,7 @@ app.use('/api/', rateLimiter);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/api/keys', keyRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
