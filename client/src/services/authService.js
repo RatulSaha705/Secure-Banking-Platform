@@ -9,3 +9,11 @@ export const loginUser = (data) => api.post('/auth/login', data);
 
 export const verifyLoginOtp = (data) =>
   api.post('/auth/login/verify', data);
+
+export const refreshSession = () => api.post('/auth/refresh');
+
+export const recordSessionActivity = () => api.post('/auth/activity');
+
+export const logoutUser = () => api.post('/auth/logout');
+
+export const getCurrentUser = () => api.get('/auth/me');

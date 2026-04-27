@@ -3,17 +3,13 @@
 /**
  * server/src/services/authService.js
  *
- * Feature 9 complete auth flow:
- *
  * Registration:
  *   POST /register
- *     - receive username/email/contact/password
  *     - create lookup hashes
  *     - hash + salt password
  *     - encrypt sensitive user fields
- *     - MAC encrypted fields
  *     - store pending registration
- *     - email OTP to user
+ *     - email OTP
  *
  *   POST /register/verify
  *     - verify OTP
@@ -23,11 +19,12 @@
  *   POST /login
  *     - verify email/username + password
  *     - email OTP
- *     - no JWT yet
+ *     - no JWT/session yet
  *
  *   POST /login/verify
  *     - verify OTP
- *     - issue final access token
+ *     - create refresh session
+ *     - issue short-lived access token
  */
 
 const mongoose = require('mongoose');
@@ -41,7 +38,7 @@ const {
   normalize,
 } = require('./lookupHashService');
 
-const { generateAccessToken } = require('./tokenService');
+const { createLoginSession } = require('./tokenService');
 
 const {
   encryptSensitiveFields,
@@ -171,11 +168,6 @@ const startRegistration = async ({
   };
 };
 
-/**
- * Backward-compatible name:
- * registerUser now starts registration and sends OTP.
- * The real user is created only after completeRegistrationWithOtp().
- */
 const registerUser = startRegistration;
 
 const completeRegistrationWithOtp = async ({ pendingRegistrationId, challengeId, otp }) => {
@@ -306,14 +298,14 @@ const loginUser = async ({ identifier, email, username, password }) => {
   };
 };
 
-const completeLoginWithOtp = async ({ challengeId, userId, otp }) => {
+const completeLoginWithOtp = async ({ challengeId, userId, otp, req }) => {
   await verifyLoginOtp({
     challengeId,
     userId,
     otp,
   });
 
-  const user = await User.findById(userId).lean();
+  const user = await User.findById(userId);
 
   if (!user) {
     const error = new Error('User not found');
@@ -327,13 +319,13 @@ const completeLoginWithOtp = async ({ challengeId, userId, otp }) => {
     throw error;
   }
 
-  const accessToken = generateAccessToken({
-    id: user._id.toString(),
-    role: user.role,
-  });
+  const session = await createLoginSession({ user, req });
 
   return {
-    accessToken,
+    accessToken: session.accessToken,
+    refreshToken: session.refreshToken,
+    sessionId: session.sessionId,
+    sessionExpiresAt: session.sessionExpiresAt,
     user: {
       id: user._id.toString(),
       role: user.role,

@@ -8,6 +8,10 @@
  *   POST /api/auth/register/verify
  *   POST /api/auth/login
  *   POST /api/auth/login/verify
+ *   POST /api/auth/refresh
+ *   POST /api/auth/activity
+ *   POST /api/auth/logout
+ *   GET  /api/auth/me
  */
 
 const express = require('express');
@@ -18,7 +22,13 @@ const {
   verifyRegistration,
   login,
   verifyLogin,
+  refresh,
+  activity,
+  logout,
+  me,
 } = require('../controllers/authController');
+
+const { requireAuth } = require('../middleware/authMiddleware');
 
 const {
   registerRules,
@@ -33,5 +43,10 @@ router.post('/register/verify', verifyRegistrationRules, handleValidation, verif
 
 router.post('/login', loginRules, handleValidation, login);
 router.post('/login/verify', verifyLoginRules, handleValidation, verifyLogin);
+
+router.post('/refresh', refresh);
+router.post('/activity', requireAuth, activity);
+router.post('/logout', logout);
+router.get('/me', requireAuth, me);
 
 module.exports = router;

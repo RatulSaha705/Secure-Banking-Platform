@@ -1,9 +1,28 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { setAccessTokenForApi, clearAccessTokenForApi } from '../services/api';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
+import {
+  setAccessTokenForApi,
+  clearAccessTokenForApi,
+} from '../services/api';
+
+import {
+  refreshSession,
+  recordSessionActivity,
+  logoutUser,
+} from '../services/authService';
 
 const AuthContext = createContext(null);
 
-const STORAGE_KEY = 'securebank_auth';
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const ACTIVITY_SYNC_THROTTLE_MS = 30 * 1000;
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -11,50 +30,160 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+  const idleTimerRef = useRef(null);
+  const lastActivitySyncRef = useRef(0);
+  const logoutInProgressRef = useRef(false);
 
-      if (saved) {
-        const parsed = JSON.parse(saved);
-
-        if (parsed?.accessToken && parsed?.user) {
-          setCurrentUser(parsed.user);
-          setAccessToken(parsed.accessToken);
-          setAccessTokenForApi(parsed.accessToken);
-          setIsAuthenticated(true);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to restore auth state:', error);
-      localStorage.removeItem(STORAGE_KEY);
-    } finally {
-      setIsLoading(false);
+  const clearIdleTimer = useCallback(() => {
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = null;
     }
   }, []);
 
-  const login = (userData, token) => {
-    setCurrentUser(userData);
-    setAccessToken(token);
-    setIsAuthenticated(true);
-    setAccessTokenForApi(token);
-
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        user: userData,
-        accessToken: token,
-      })
-    );
-  };
-
-  const logout = () => {
+  const clearAuthState = useCallback(() => {
     setCurrentUser(null);
     setAccessToken(null);
     setIsAuthenticated(false);
     clearAccessTokenForApi();
-    localStorage.removeItem(STORAGE_KEY);
-  };
+    clearIdleTimer();
+  }, [clearIdleTimer]);
+
+  const logout = useCallback(
+    async ({ redirectToLogin = false, reason = null } = {}) => {
+      if (logoutInProgressRef.current) return;
+
+      logoutInProgressRef.current = true;
+
+      try {
+        await logoutUser();
+      } catch (_error) {
+        // Even if the server session is already expired, clear the client state.
+      } finally {
+        clearAuthState();
+        logoutInProgressRef.current = false;
+
+        if (redirectToLogin) {
+          const reasonQuery = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+          window.location.assign(`/login${reasonQuery}`);
+        }
+      }
+    },
+    [clearAuthState]
+  );
+
+  const forceIdleLogout = useCallback(() => {
+    logout({
+      redirectToLogin: true,
+      reason: 'idle-timeout',
+    });
+  }, [logout]);
+
+  const resetIdleTimer = useCallback(() => {
+    clearIdleTimer();
+
+    idleTimerRef.current = setTimeout(() => {
+      forceIdleLogout();
+    }, IDLE_TIMEOUT_MS);
+  }, [clearIdleTimer, forceIdleLogout]);
+
+  const syncActivityWithServer = useCallback(async () => {
+    const now = Date.now();
+
+    if (now - lastActivitySyncRef.current < ACTIVITY_SYNC_THROTTLE_MS) {
+      return;
+    }
+
+    lastActivitySyncRef.current = now;
+
+    try {
+      await recordSessionActivity();
+    } catch (_error) {
+      // If this fails, the next protected request or refresh will handle it.
+    }
+  }, []);
+
+  const handleUserActivity = useCallback(() => {
+    if (!isAuthenticated) return;
+
+    resetIdleTimer();
+    syncActivityWithServer();
+  }, [isAuthenticated, resetIdleTimer, syncActivityWithServer]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const restoreSession = async () => {
+      try {
+        const res = await refreshSession();
+        const token = res.data?.accessToken;
+        const user = res.data?.user;
+
+        if (!mounted) return;
+
+        if (token && user) {
+          setCurrentUser(user);
+          setAccessToken(token);
+          setAccessTokenForApi(token);
+          setIsAuthenticated(true);
+        } else {
+          clearAuthState();
+        }
+      } catch (_error) {
+        if (mounted) clearAuthState();
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    };
+
+    restoreSession();
+
+    return () => {
+      mounted = false;
+    };
+  }, [clearAuthState]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      clearIdleTimer();
+      return undefined;
+    }
+
+    resetIdleTimer();
+
+    const activityEvents = [
+      'click',
+      'keydown',
+      'scroll',
+      'touchstart',
+    ];
+
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, handleUserActivity, {
+        passive: true,
+      });
+    });
+
+    return () => {
+      clearIdleTimer();
+
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, handleUserActivity);
+      });
+    };
+  }, [isAuthenticated, handleUserActivity, resetIdleTimer, clearIdleTimer]);
+
+  const login = useCallback(
+    (userData, token) => {
+      setCurrentUser(userData);
+      setAccessToken(token);
+      setIsAuthenticated(true);
+      setAccessTokenForApi(token);
+      lastActivitySyncRef.current = 0;
+      resetIdleTimer();
+    },
+    [resetIdleTimer]
+  );
 
   const value = useMemo(
     () => ({
@@ -65,7 +194,7 @@ export const AuthProvider = ({ children }) => {
       login,
       logout,
     }),
-    [currentUser, accessToken, isAuthenticated, isLoading]
+    [currentUser, accessToken, isAuthenticated, isLoading, login, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

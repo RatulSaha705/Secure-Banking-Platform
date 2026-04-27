@@ -34,6 +34,9 @@ const keyRoutes = require('./routes/keyRoutes');
 // ── Express app ───────────────────────────────────────────────────────────────
 const app = express();
 
+// Needed when secure cookies are used behind a proxy in production.
+app.set('trust proxy', 1);
+
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet());
 
