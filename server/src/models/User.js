@@ -3,7 +3,7 @@
 /**
  * server/src/models/User.js
  *
- * Feature 1: Refactored User Registration Schema
+ * User schema with RBAC role support.
  *
  * Password:
  *   - NEVER encrypted
@@ -17,9 +17,13 @@
  * Lookup:
  *   - emailLookupHash and usernameLookupHash are deterministic custom HMAC hashes
  *   - login/duplicate-check use lookup hashes because email/username are encrypted
+ *
+ * RBAC:
+ *   - role decides whether the user is a normal user or admin
  */
 
 const mongoose = require('mongoose');
+const { ROLES, ROLE_LIST } = require('../constants/roles');
 
 const encryptedEnvelopeSchemaType = mongoose.Schema.Types.Mixed;
 
@@ -99,13 +103,16 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ['user', 'admin'],
-      default: 'user',
+      enum: ROLE_LIST,
+      default: ROLES.USER,
+      required: true,
+      index: true,
     },
 
     isActive: {
       type: Boolean,
       default: true,
+      index: true,
     },
 
     twoFactorEnabled: {

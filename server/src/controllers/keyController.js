@@ -4,6 +4,9 @@
  * server/src/controllers/keyController.js
  *
  * Admin-facing controller for Feature 17 Key Management.
+ *
+ * Security rule:
+ *   API responses must never return private keys or .env private-key lines.
  */
 
 const keyService = require('../security/keys/key.service');
@@ -19,6 +22,7 @@ const sendSuccess = (res, statusCode, message, data = {}) => {
 const listKeys = async (req, res, next) => {
   try {
     const keys = await keyService.listKeyRecords(req.query);
+
     return sendSuccess(res, 200, 'Key records fetched successfully', {
       keys: keys.map(keyService.sanitizeKeyRecord),
     });
@@ -34,7 +38,7 @@ const createKey = async (req, res, next) => {
       purpose: req.body.purpose,
       ownerUserId: req.body.ownerUserId || null,
       status: req.body.status || 'ACTIVE',
-      persistToEnvFile: req.body.persistToEnvFile === true,
+      persistToEnvFile: true,
       notes: req.body.notes || '',
       rsaKeySizeBits: req.body.rsaKeySizeBits || 1024,
       rsaRounds: req.body.rsaRounds || 40,
@@ -42,9 +46,8 @@ const createKey = async (req, res, next) => {
 
     return sendSuccess(res, 201, 'Key created successfully', {
       key: keyService.sanitizeKeyRecord(result.keyRecord),
-      envLine: result.envLine,
-      warning:
-        'envLine contains private key material. If persistToEnvFile was false, copy envLine into server/.env and restart backend.',
+      privateKeyStorage: 'server-env',
+      warning: 'Private key material was stored server-side and was not returned in this response.',
     });
   } catch (error) {
     return next(error);
@@ -57,7 +60,7 @@ const rotateKey = async (req, res, next) => {
       algorithm: req.body.algorithm,
       purpose: req.body.purpose,
       ownerUserId: req.body.ownerUserId || null,
-      persistToEnvFile: req.body.persistToEnvFile === true,
+      persistToEnvFile: true,
       notes: req.body.notes || '',
       rsaKeySizeBits: req.body.rsaKeySizeBits || 1024,
       rsaRounds: req.body.rsaRounds || 40,
@@ -65,9 +68,8 @@ const rotateKey = async (req, res, next) => {
 
     return sendSuccess(res, 201, 'Key rotated successfully', {
       key: keyService.sanitizeKeyRecord(result.keyRecord),
-      envLine: result.envLine,
-      warning:
-        'envLine contains private key material. Old encrypted records still need old private keys for decryption.',
+      privateKeyStorage: 'server-env',
+      warning: 'Old encrypted records still need old private keys for decryption.',
     });
   } catch (error) {
     return next(error);
@@ -109,18 +111,15 @@ const ensureInitialKeys = async (req, res, next) => {
     const result = await keyService.ensureInitialKeySet({
       rsaKeySizeBits: req.body.rsaKeySizeBits || 1024,
       rsaRounds: req.body.rsaRounds || 40,
-      persistToEnvFile: req.body.persistToEnvFile === true,
+      persistToEnvFile: true,
     });
 
     return sendSuccess(res, 201, 'Initial system key set checked/generated', {
       created: result.created.map(keyService.sanitizeKeyRecord),
       existing: result.existing.map(keyService.sanitizeKeyRecord),
       updatedEnvVars: result.updatedEnvVars,
-      envLinesToCopy: result.envLinesToCopy,
-      warning:
-        result.envLinesToCopy.length > 0
-          ? 'Copy every env line into server/.env and restart backend if persistToEnvFile was false. These lines contain private key material.'
-          : 'No new private keys were generated.',
+      privateKeyStorage: 'server-env',
+      warning: 'Private key material was stored server-side and was not returned in this response.',
     });
   } catch (error) {
     return next(error);
@@ -133,16 +132,17 @@ const ensureUserKeys = async (req, res, next) => {
       ownerUserId: req.body.ownerUserId,
       rsaKeySizeBits: req.body.rsaKeySizeBits || 1024,
       rsaRounds: req.body.rsaRounds || 40,
-      persistToEnvFile: req.body.persistToEnvFile !== false,
+      persistToEnvFile: true,
     });
 
     return sendSuccess(res, 201, 'User key set checked/generated', {
       created: result.created.map(keyService.sanitizeKeyRecord),
       existing: result.existing.map(keyService.sanitizeKeyRecord),
       updatedEnvVars: result.updatedEnvVars,
+      privateKeyStorage: 'server-env',
       warning:
         result.created.length > 0
-          ? 'Private keys were stored in backend .env/runtime. Do not expose env values.'
+          ? 'Private keys were stored server-side and were not returned in this response.'
           : 'User already has the required active keys.',
     });
   } catch (error) {
