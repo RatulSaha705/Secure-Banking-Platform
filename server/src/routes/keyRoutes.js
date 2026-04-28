@@ -29,6 +29,7 @@ router.use(blockUntilAdminMiddlewareIsConnected);
 router.get('/', keyController.listKeys);
 router.post('/', keyController.createKey);
 router.post('/ensure-initial', keyController.ensureInitialKeys);
+router.post('/ensure-user', keyController.ensureUserKeys);
 router.post('/rotate', keyController.rotateKey);
 router.patch('/:keyId/retire', keyController.retireKey);
 router.patch('/:keyId/compromised', keyController.markKeyCompromised);

@@ -4,9 +4,24 @@
  * server/src/security/keys/key.service.js
  *
  * Feature 17: Key Management Service
+ *
+ * Updated design:
+ *   - Every user gets their own RSA/ECC key records during registration.
+ *   - MongoDB stores public keys and metadata only.
+ *   - Private keys are stored in backend .env as base64 JSON maps.
+ *   - Encryption must receive ownerId so one user's data uses only that user's keys.
  */
 
-const { CryptoKey, KEY_ALGORITHMS, KEY_PURPOSES, KEY_STATUSES } = require('./key.model');
+const fs = require('fs');
+const path = require('path');
+const mongoose = require('mongoose');
+const {
+  CryptoKey,
+  KEY_ALGORITHMS,
+  KEY_PURPOSES,
+  KEY_STATUSES,
+  KEY_OWNER_TYPES,
+} = require('./key.model');
 const { generateRsaKeyPair } = require('../rsa/rsa.keygen');
 const { generateEccKeyPair } = require('../ecc/ecc.keygen');
 
@@ -19,7 +34,7 @@ const KEY_USAGE_BY_PURPOSE = Object.freeze({
   USER_PROFILE: 'Encrypt registration, login display, and profile fields',
   ACCOUNT_DATA: 'Encrypt account number, account type, status, and balance-related fields',
   BENEFICIARY_DATA: 'Encrypt saved beneficiary details',
-  TRANSACTION_DATA: 'Encrypt transaction records and transfer-sensitive fields',
+  TRANSACTION_DATA: 'Encrypt transaction history and transfer-sensitive records',
   SUPPORT_TICKET: 'Encrypt support ticket / post-equivalent content',
   NOTIFICATION: 'Encrypt sensitive notification body text',
   TEST: 'Testing only',
@@ -29,13 +44,16 @@ const DEFAULT_INITIAL_KEY_PLANS = Object.freeze([
   { algorithm: 'RSA', purpose: 'USER_PROFILE' },
   { algorithm: 'RSA', purpose: 'ACCOUNT_DATA' },
   { algorithm: 'RSA', purpose: 'BENEFICIARY_DATA' },
-  { algorithm: 'RSA', purpose: 'TRANSACTION_DATA' },
+  { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
   { algorithm: 'ECC', purpose: 'SUPPORT_TICKET' },
   { algorithm: 'ECC', purpose: 'NOTIFICATION' },
 ]);
 
+const DEFAULT_USER_KEY_PLANS = DEFAULT_INITIAL_KEY_PLANS;
+
 const DATA_TYPE_TO_KEY_PLAN = Object.freeze({
   USER: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
+  USER_REGISTRATION: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
   USER_PROFILE: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
   PROFILE: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
 
@@ -47,14 +65,21 @@ const DATA_TYPE_TO_KEY_PLAN = Object.freeze({
   BENEFICIARY: { algorithm: 'RSA', purpose: 'BENEFICIARY_DATA' },
   BENEFICIARY_DATA: { algorithm: 'RSA', purpose: 'BENEFICIARY_DATA' },
 
-  TRANSACTION: { algorithm: 'RSA', purpose: 'TRANSACTION_DATA' },
-  TRANSACTION_DATA: { algorithm: 'RSA', purpose: 'TRANSACTION_DATA' },
+  TRANSACTION: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
+  TRANSACTION_DATA: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
+  TRANSFER: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
 
   SUPPORT_TICKET: { algorithm: 'ECC', purpose: 'SUPPORT_TICKET' },
   TICKET: { algorithm: 'ECC', purpose: 'SUPPORT_TICKET' },
   POST: { algorithm: 'ECC', purpose: 'SUPPORT_TICKET' },
+  TICKET_COMMENT: { algorithm: 'ECC', purpose: 'SUPPORT_TICKET' },
+  COMMENT: { algorithm: 'ECC', purpose: 'SUPPORT_TICKET' },
 
   NOTIFICATION: { algorithm: 'ECC', purpose: 'NOTIFICATION' },
+  ALERT: { algorithm: 'ECC', purpose: 'NOTIFICATION' },
+
+  TEST_RSA: { algorithm: 'RSA', purpose: 'TEST' },
+  TEST_ECC: { algorithm: 'ECC', purpose: 'TEST' },
 });
 
 const normalizeAlgorithm = (algorithm) => {
@@ -87,6 +112,30 @@ const normalizeStatus = (status) => {
   return value;
 };
 
+const normalizeOwnerType = (ownerType) => {
+  const value = String(ownerType || 'SYSTEM').trim().toUpperCase();
+
+  if (!KEY_OWNER_TYPES.includes(value)) {
+    throw new Error(`Unsupported key owner type: ${ownerType}`);
+  }
+
+  return value;
+};
+
+const normalizeOwnerUserId = (ownerUserId) => {
+  if (ownerUserId === undefined || ownerUserId === null || ownerUserId === '') {
+    return null;
+  }
+
+  const value = String(ownerUserId).trim();
+
+  if (!mongoose.Types.ObjectId.isValid(value)) {
+    throw new Error(`Invalid ownerUserId for key ownership: ${ownerUserId}`);
+  }
+
+  return value;
+};
+
 const slugify = (value) => String(value)
   .trim()
   .toLowerCase()
@@ -95,15 +144,22 @@ const slugify = (value) => String(value)
   .replace(/-+/g, '-')
   .replace(/^-|-$/g, '');
 
-const makeKeyId = (algorithm, purpose, version) => {
+const makeKeyId = (algorithm, purpose, version, ownerUserId = null) => {
   const normalizedAlgorithm = normalizeAlgorithm(algorithm);
   const normalizedPurpose = normalizePurpose(purpose);
+  const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
 
   if (!Number.isInteger(version) || version < 1) {
     throw new RangeError('version must be a positive integer');
   }
 
-  return `${slugify(normalizedAlgorithm)}-${slugify(normalizedPurpose)}-v${version}`;
+  const base = `${slugify(normalizedAlgorithm)}-${slugify(normalizedPurpose)}-v${version}`;
+
+  if (!normalizedOwnerUserId) {
+    return base;
+  }
+
+  return `user-${slugify(normalizedOwnerUserId)}-${base}`;
 };
 
 const getPrivateKeyEnvVar = (algorithm) => {
@@ -142,6 +198,55 @@ const mergePrivateKeyIntoMap = (currentEnvValue, keyId, privateKey) => {
   return encodePrivateKeyMap(map);
 };
 
+const getDefaultEnvFilePath = () => {
+  return path.resolve(process.cwd(), '.env');
+};
+
+const upsertEnvValueInFile = (envVarName, envVarValue, envFilePath = getDefaultEnvFilePath()) => {
+  const targetFile = path.resolve(envFilePath);
+  const directory = path.dirname(targetFile);
+
+  if (!fs.existsSync(directory)) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+
+  let content = '';
+
+  if (fs.existsSync(targetFile)) {
+    content = fs.readFileSync(targetFile, 'utf8');
+  }
+
+  const line = `${envVarName}=${envVarValue}`;
+  const pattern = new RegExp(`^${envVarName}=.*$`, 'm');
+
+  if (pattern.test(content)) {
+    content = content.replace(pattern, line);
+  } else {
+    if (content.length > 0 && !content.endsWith('\n')) {
+      content += '\n';
+    }
+
+    content += `${line}\n`;
+  }
+
+  fs.writeFileSync(targetFile, content, 'utf8');
+  process.env[envVarName] = envVarValue;
+
+  return targetFile;
+};
+
+const persistPrivateKeyEnvValues = (envValuesByName, envFilePath = getDefaultEnvFilePath()) => {
+  const updatedEnvVars = [];
+
+  for (const [envVarName, envVarValue] of Object.entries(envValuesByName)) {
+    if (!envVarValue) continue;
+    upsertEnvValueInFile(envVarName, envVarValue, envFilePath);
+    updatedEnvVars.push(envVarName);
+  }
+
+  return updatedEnvVars;
+};
+
 const generateKeyMaterial = (algorithm, options = {}) => {
   const normalizedAlgorithm = normalizeAlgorithm(algorithm);
 
@@ -159,8 +264,25 @@ const generateKeyMaterial = (algorithm, options = {}) => {
   throw new Error(`Unsupported key algorithm: ${algorithm}`);
 };
 
-const getNextVersion = async (algorithm, purpose) => {
+const buildOwnerQuery = (ownerUserId = null) => {
+  const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
+
+  if (!normalizedOwnerUserId) {
+    return {
+      ownerType: 'SYSTEM',
+      ownerUserId: null,
+    };
+  }
+
+  return {
+    ownerType: 'USER',
+    ownerUserId: new mongoose.Types.ObjectId(normalizedOwnerUserId),
+  };
+};
+
+const getNextVersion = async (algorithm, purpose, ownerUserId = null) => {
   const latest = await CryptoKey.findOne({
+    ...buildOwnerQuery(ownerUserId),
     algorithm: normalizeAlgorithm(algorithm),
     purpose: normalizePurpose(purpose),
   })
@@ -170,8 +292,9 @@ const getNextVersion = async (algorithm, purpose) => {
   return latest ? latest.version + 1 : 1;
 };
 
-const getActiveKeyRecord = async ({ algorithm, purpose }) => {
+const getActiveKeyRecord = async ({ algorithm, purpose, ownerUserId = null } = {}) => {
   return CryptoKey.findOne({
+    ...buildOwnerQuery(ownerUserId),
     algorithm: normalizeAlgorithm(algorithm),
     purpose: normalizePurpose(purpose),
     status: 'ACTIVE',
@@ -196,7 +319,7 @@ const getPrivateKeyForRecord = (keyRecord) => {
   if (!privateKey) {
     throw new Error(
       `Private key for ${keyRecord.keyId} was not found in ${envVar}. ` +
-      'Copy the generated env value into server/.env and restart the backend.'
+      'The public key exists in MongoDB, but the private key must be present in server/.env. '
     );
   }
 
@@ -210,15 +333,29 @@ const createKeyRecord = async ({
   usage,
   notes = '',
   rotatedFromKeyId = null,
+  ownerUserId = null,
   rsaKeySizeBits = 1024,
   rsaRounds = 40,
 } = {}) => {
   const normalizedAlgorithm = normalizeAlgorithm(algorithm);
   const normalizedPurpose = normalizePurpose(purpose);
   const normalizedStatus = normalizeStatus(status);
+  const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
+  const ownerQuery = buildOwnerQuery(normalizedOwnerUserId);
 
-  const version = await getNextVersion(normalizedAlgorithm, normalizedPurpose);
-  const keyId = makeKeyId(normalizedAlgorithm, normalizedPurpose, version);
+  const version = await getNextVersion(
+    normalizedAlgorithm,
+    normalizedPurpose,
+    normalizedOwnerUserId
+  );
+
+  const keyId = makeKeyId(
+    normalizedAlgorithm,
+    normalizedPurpose,
+    version,
+    normalizedOwnerUserId
+  );
+
   const material = generateKeyMaterial(normalizedAlgorithm, {
     rsaKeySizeBits,
     rsaRounds,
@@ -229,6 +366,7 @@ const createKeyRecord = async ({
   if (normalizedStatus === 'ACTIVE') {
     await CryptoKey.updateMany(
       {
+        ...ownerQuery,
         algorithm: normalizedAlgorithm,
         purpose: normalizedPurpose,
         status: 'ACTIVE',
@@ -237,7 +375,7 @@ const createKeyRecord = async ({
         $set: {
           status: 'RETIRED',
           retiredAt: new Date(),
-          notes: 'Retired automatically because a newer active key was created.',
+          notes: 'Retired automatically because a newer active key was created for the same owner and purpose.',
         },
       }
     );
@@ -245,6 +383,8 @@ const createKeyRecord = async ({
 
   const keyRecord = await CryptoKey.create({
     keyId,
+    ownerType: ownerQuery.ownerType,
+    ownerUserId: ownerQuery.ownerUserId,
     algorithm: normalizedAlgorithm,
     purpose: normalizedPurpose,
     version,
@@ -275,6 +415,13 @@ const createKeyRecordWithEnvValue = async (input = {}) => {
     created.privateKey
   );
 
+  if (input.persistToEnvFile === true) {
+    persistPrivateKeyEnvValues(
+      { [created.privateKeyEnvVar]: newEnvValue },
+      input.envFilePath || getDefaultEnvFilePath()
+    );
+  }
+
   return {
     keyRecord: created.keyRecord,
     privateKeyEnvVar: created.privateKeyEnvVar,
@@ -287,17 +434,23 @@ const rotateKey = async ({
   algorithm,
   purpose,
   notes = '',
+  ownerUserId = null,
+  persistToEnvFile = false,
+  envFilePath,
   rsaKeySizeBits = 1024,
   rsaRounds = 40,
 } = {}) => {
-  const oldActive = await getActiveKeyRecord({ algorithm, purpose });
+  const oldActive = await getActiveKeyRecord({ algorithm, purpose, ownerUserId });
 
   return createKeyRecordWithEnvValue({
     algorithm,
     purpose,
+    ownerUserId,
     status: 'ACTIVE',
     rotatedFromKeyId: oldActive ? oldActive.keyId : null,
     notes: notes || `Rotated from ${oldActive ? oldActive.keyId : 'none'}`,
+    persistToEnvFile,
+    envFilePath,
     rsaKeySizeBits,
     rsaRounds,
   });
@@ -344,9 +497,18 @@ const listKeyRecords = async (filter = {}) => {
   if (filter.purpose) query.purpose = normalizePurpose(filter.purpose);
   if (filter.status) query.status = normalizeStatus(filter.status);
 
+  if (filter.ownerType) {
+    query.ownerType = normalizeOwnerType(filter.ownerType);
+  }
+
+  if (filter.ownerUserId) {
+    query.ownerType = 'USER';
+    query.ownerUserId = new mongoose.Types.ObjectId(normalizeOwnerUserId(filter.ownerUserId));
+  }
+
   return CryptoKey.find(query)
     .select('-__v')
-    .sort({ algorithm: 1, purpose: 1, version: -1 })
+    .sort({ ownerType: 1, ownerUserId: 1, algorithm: 1, purpose: 1, version: -1 })
     .lean();
 };
 
@@ -361,21 +523,40 @@ const resolveKeyPlanForDataType = (dataType) => {
   return plan;
 };
 
-const getActiveKeyForDataType = async (dataType) => {
+const isTestDataType = (dataType) => {
+  const key = String(dataType || '').trim().toUpperCase();
+  return key === 'TEST' || key === 'TEST_RSA' || key === 'TEST_ECC';
+};
+
+const getActiveKeyForDataType = async (dataType, options = {}) => {
   const plan = resolveKeyPlanForDataType(dataType);
-  const active = await getActiveKeyRecord(plan);
+  const ownerUserId = normalizeOwnerUserId(options.ownerId || options.ownerUserId || null);
+
+  if (!ownerUserId && !isTestDataType(dataType)) {
+    throw new Error(
+      `ownerId is required for ${dataType} encryption. ` +
+      'Every user-owned record must be encrypted with that user\'s own key.'
+    );
+  }
+
+  const active = await getActiveKeyRecord({
+    algorithm: plan.algorithm,
+    purpose: plan.purpose,
+    ownerUserId,
+  });
 
   if (!active) {
     throw new Error(
-      `No ACTIVE key found for ${dataType}. Create key for ${plan.algorithm}/${plan.purpose} first.`
+      `No ACTIVE ${ownerUserId ? 'user-owned' : 'system'} key found for ${dataType}. ` +
+      `Required key: ${plan.algorithm}/${plan.purpose}.`
     );
   }
 
   return active;
 };
 
-const getActiveKeyMaterialForDataType = async (dataType) => {
-  const keyRecord = await getActiveKeyForDataType(dataType);
+const getActiveKeyMaterialForDataType = async (dataType, options = {}) => {
+  const keyRecord = await getActiveKeyForDataType(dataType, options);
   const privateKey = getPrivateKeyForRecord(keyRecord);
 
   return {
@@ -385,7 +566,15 @@ const getActiveKeyMaterialForDataType = async (dataType) => {
   };
 };
 
-const ensureInitialKeySet = async (options = {}) => {
+const ensureKeySetFromPlans = async ({
+  plans,
+  ownerUserId = null,
+  persistToEnvFile = false,
+  envFilePath,
+  rsaKeySizeBits = 1024,
+  rsaRounds = 40,
+  notes = '',
+} = {}) => {
   const created = [];
   const existing = [];
 
@@ -394,8 +583,12 @@ const ensureInitialKeySet = async (options = {}) => {
     SECURITY_ECC_PRIVATE_KEYS_B64: process.env.SECURITY_ECC_PRIVATE_KEYS_B64 || '',
   };
 
-  for (const plan of DEFAULT_INITIAL_KEY_PLANS) {
-    const active = await getActiveKeyRecord(plan);
+  for (const plan of plans) {
+    const active = await getActiveKeyRecord({
+      algorithm: plan.algorithm,
+      purpose: plan.purpose,
+      ownerUserId,
+    });
 
     if (active) {
       existing.push(active);
@@ -405,10 +598,11 @@ const ensureInitialKeySet = async (options = {}) => {
     const createdRaw = await createKeyRecord({
       algorithm: plan.algorithm,
       purpose: plan.purpose,
+      ownerUserId,
       status: 'ACTIVE',
-      rsaKeySizeBits: options.rsaKeySizeBits || 1024,
-      rsaRounds: options.rsaRounds || 40,
-      notes: 'Initial key created by Feature 17 Key Management Module',
+      rsaKeySizeBits,
+      rsaRounds,
+      notes,
     });
 
     const envVar = createdRaw.privateKeyEnvVar;
@@ -421,6 +615,12 @@ const ensureInitialKeySet = async (options = {}) => {
     created.push(createdRaw.keyRecord);
   }
 
+  let updatedEnvVars = [];
+
+  if (persistToEnvFile && created.length > 0) {
+    updatedEnvVars = persistPrivateKeyEnvValues(envAccumulator, envFilePath || getDefaultEnvFilePath());
+  }
+
   const envLinesToCopy = Object.entries(envAccumulator)
     .filter(([, value]) => Boolean(value))
     .map(([name, value]) => `${name}=${value}`);
@@ -428,12 +628,49 @@ const ensureInitialKeySet = async (options = {}) => {
   return {
     created,
     existing,
+    updatedEnvVars,
     envLinesToCopy,
     message:
       created.length > 0
-        ? 'Copy envLinesToCopy into server/.env and restart the backend.'
-        : 'Initial key set already exists.',
+        ? 'Key set generated. Private key environment values were updated or returned.'
+        : 'Key set already exists.',
   };
+};
+
+const ensureInitialKeySet = async (options = {}) => {
+  return ensureKeySetFromPlans({
+    plans: DEFAULT_INITIAL_KEY_PLANS,
+    ownerUserId: null,
+    persistToEnvFile: options.persistToEnvFile === true,
+    envFilePath: options.envFilePath,
+    rsaKeySizeBits: options.rsaKeySizeBits || 1024,
+    rsaRounds: options.rsaRounds || 40,
+    notes: 'Initial system key created by Feature 17 Key Management Module',
+  });
+};
+
+const ensureUserKeySet = async ({
+  ownerUserId,
+  persistToEnvFile = true,
+  envFilePath,
+  rsaKeySizeBits = 1024,
+  rsaRounds = 40,
+} = {}) => {
+  const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
+
+  if (!normalizedOwnerUserId) {
+    throw new Error('ownerUserId is required to generate per-user key pairs');
+  }
+
+  return ensureKeySetFromPlans({
+    plans: DEFAULT_USER_KEY_PLANS,
+    ownerUserId: normalizedOwnerUserId,
+    persistToEnvFile,
+    envFilePath,
+    rsaKeySizeBits,
+    rsaRounds,
+    notes: `Per-user key generated for user ${normalizedOwnerUserId}`,
+  });
 };
 
 const sanitizeKeyRecord = (keyRecord) => {
@@ -454,18 +691,24 @@ module.exports = {
   PRIVATE_KEY_ENV_BY_ALGORITHM,
   KEY_USAGE_BY_PURPOSE,
   DEFAULT_INITIAL_KEY_PLANS,
+  DEFAULT_USER_KEY_PLANS,
   DATA_TYPE_TO_KEY_PLAN,
 
   normalizeAlgorithm,
   normalizePurpose,
   normalizeStatus,
+  normalizeOwnerType,
+  normalizeOwnerUserId,
   makeKeyId,
 
   decodePrivateKeyMap,
   encodePrivateKeyMap,
   mergePrivateKeyIntoMap,
+  upsertEnvValueInFile,
+  persistPrivateKeyEnvValues,
 
   generateKeyMaterial,
+  buildOwnerQuery,
   getNextVersion,
   getActiveKeyRecord,
   getKeyRecordById,
@@ -482,5 +725,6 @@ module.exports = {
   getActiveKeyForDataType,
   getActiveKeyMaterialForDataType,
   ensureInitialKeySet,
+  ensureUserKeySet,
   sanitizeKeyRecord,
 };
