@@ -39,6 +39,7 @@ const {
 } = require('./lookupHashService');
 
 const { createLoginSession } = require('./tokenService');
+const { ensureUserKeySet } = require('../security/keys/key.service');
 
 const {
   encryptSensitiveFields,
@@ -119,6 +120,14 @@ const startRegistration = async ({
   });
 
   const userId = new mongoose.Types.ObjectId();
+
+  await ensureUserKeySet({
+    ownerUserId: userId,
+    persistToEnvFile: true,
+    rsaKeySizeBits: Number(process.env.KEY_SETUP_RSA_BITS || 1024),
+    rsaRounds: Number(process.env.KEY_SETUP_RSA_ROUNDS || 40),
+  });
+
   const securityContext = buildUserSecurityContext(userId);
   const passwordFields = await hashPassword(password);
 

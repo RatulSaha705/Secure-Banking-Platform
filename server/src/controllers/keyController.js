@@ -32,7 +32,9 @@ const createKey = async (req, res, next) => {
     const result = await keyService.createKeyRecordWithEnvValue({
       algorithm: req.body.algorithm,
       purpose: req.body.purpose,
+      ownerUserId: req.body.ownerUserId || null,
       status: req.body.status || 'ACTIVE',
+      persistToEnvFile: req.body.persistToEnvFile === true,
       notes: req.body.notes || '',
       rsaKeySizeBits: req.body.rsaKeySizeBits || 1024,
       rsaRounds: req.body.rsaRounds || 40,
@@ -42,7 +44,7 @@ const createKey = async (req, res, next) => {
       key: keyService.sanitizeKeyRecord(result.keyRecord),
       envLine: result.envLine,
       warning:
-        'Copy envLine into server/.env and restart backend. This envLine contains private key material.',
+        'envLine contains private key material. If persistToEnvFile was false, copy envLine into server/.env and restart backend.',
     });
   } catch (error) {
     return next(error);
@@ -54,6 +56,8 @@ const rotateKey = async (req, res, next) => {
     const result = await keyService.rotateKey({
       algorithm: req.body.algorithm,
       purpose: req.body.purpose,
+      ownerUserId: req.body.ownerUserId || null,
+      persistToEnvFile: req.body.persistToEnvFile === true,
       notes: req.body.notes || '',
       rsaKeySizeBits: req.body.rsaKeySizeBits || 1024,
       rsaRounds: req.body.rsaRounds || 40,
@@ -63,7 +67,7 @@ const rotateKey = async (req, res, next) => {
       key: keyService.sanitizeKeyRecord(result.keyRecord),
       envLine: result.envLine,
       warning:
-        'Copy envLine into server/.env and restart backend. Old encrypted records still need old private keys for decryption.',
+        'envLine contains private key material. Old encrypted records still need old private keys for decryption.',
     });
   } catch (error) {
     return next(error);
@@ -105,16 +109,41 @@ const ensureInitialKeys = async (req, res, next) => {
     const result = await keyService.ensureInitialKeySet({
       rsaKeySizeBits: req.body.rsaKeySizeBits || 1024,
       rsaRounds: req.body.rsaRounds || 40,
+      persistToEnvFile: req.body.persistToEnvFile === true,
     });
 
-    return sendSuccess(res, 201, 'Initial key set checked/generated', {
+    return sendSuccess(res, 201, 'Initial system key set checked/generated', {
       created: result.created.map(keyService.sanitizeKeyRecord),
       existing: result.existing.map(keyService.sanitizeKeyRecord),
+      updatedEnvVars: result.updatedEnvVars,
       envLinesToCopy: result.envLinesToCopy,
       warning:
         result.envLinesToCopy.length > 0
-          ? 'Copy every env line into server/.env and restart backend. These lines contain private key material.'
+          ? 'Copy every env line into server/.env and restart backend if persistToEnvFile was false. These lines contain private key material.'
           : 'No new private keys were generated.',
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const ensureUserKeys = async (req, res, next) => {
+  try {
+    const result = await keyService.ensureUserKeySet({
+      ownerUserId: req.body.ownerUserId,
+      rsaKeySizeBits: req.body.rsaKeySizeBits || 1024,
+      rsaRounds: req.body.rsaRounds || 40,
+      persistToEnvFile: req.body.persistToEnvFile !== false,
+    });
+
+    return sendSuccess(res, 201, 'User key set checked/generated', {
+      created: result.created.map(keyService.sanitizeKeyRecord),
+      existing: result.existing.map(keyService.sanitizeKeyRecord),
+      updatedEnvVars: result.updatedEnvVars,
+      warning:
+        result.created.length > 0
+          ? 'Private keys were stored in backend .env/runtime. Do not expose env values.'
+          : 'User already has the required active keys.',
     });
   } catch (error) {
     return next(error);
@@ -128,4 +157,5 @@ module.exports = {
   retireKey,
   markKeyCompromised,
   ensureInitialKeys,
+  ensureUserKeys,
 };

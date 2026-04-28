@@ -8,8 +8,13 @@
  * This module is the central encryption/decryption service for the project.
  * It enforces the required RSA/ECC split from encryptionPolicy.js.
  *
-* It uses only your custom RSA and ECC modules for encryption/decryption.
-* It does not call built-in encryption/decryption functions.
+ * Updated design:
+ *   - User-owned data must provide ownerId.
+ *   - The active key is selected by algorithm + purpose + ownerUserId.
+ *   - One user's encrypted data is tied to that user's keyId/ownerUserId.
+ *
+ * It uses only your custom RSA and ECC modules for encryption/decryption.
+ * It does not call built-in encryption/decryption functions.
  */
 
 const {
@@ -21,6 +26,7 @@ const {
   getActiveKeyRecord,
   getKeyRecordById,
   getPrivateKeyForRecord,
+  normalizeOwnerUserId,
 } = require('../keys/key.service');
 
 const {
@@ -40,6 +46,8 @@ const {
 } = require('../ecc/ecc.decrypt');
 
 const ENVELOPE_VERSION = 1;
+
+const SYSTEM_ALLOWED_DATA_TYPES = Object.freeze(['TEST_RSA', 'TEST_ECC']);
 
 const isDualAsymmetricEnvelope = (value) => {
   return Boolean(
@@ -89,21 +97,45 @@ const decryptTextByAlgorithm = (algorithm, ciphertext, privateKey) => {
   throw new Error(`Unsupported decryption algorithm: ${algorithm}`);
 };
 
+const resolveEnvelopeOwnerId = (metadata = {}, dataType) => {
+  const ownerId = normalizeOwnerUserId(
+    metadata.ownerId ||
+    metadata.ownerUserId ||
+    metadata.userId ||
+    null
+  );
+
+  if (ownerId) {
+    return ownerId;
+  }
+
+  if (SYSTEM_ALLOWED_DATA_TYPES.includes(String(dataType || '').trim().toUpperCase())) {
+    return null;
+  }
+
+  throw new Error(
+    `ownerId is required for ${dataType} encryption. ` +
+    'Every user-owned record must be encrypted with the correct user key.'
+  );
+};
+
 const encryptValue = async (value, dataType, metadata = {}) => {
   if (value === undefined) return undefined;
   if (isDualAsymmetricEnvelope(value)) return value;
 
   const policy = getEncryptionPolicy(dataType);
+  const ownerUserId = resolveEnvelopeOwnerId(metadata, policy.dataType);
 
   const keyRecord = await getActiveKeyRecord({
     algorithm: policy.algorithm,
     purpose: policy.keyPurpose,
+    ownerUserId,
   });
 
   if (!keyRecord) {
     throw new Error(
-      `No ACTIVE ${policy.algorithm} key found for ${policy.keyPurpose}. ` +
-      'Run the key initialization script first.'
+      `No ACTIVE ${ownerUserId ? 'user-owned' : 'system'} ${policy.algorithm} key found for ` +
+      `${policy.keyPurpose}. Generate the key pair first.`
     );
   }
 
@@ -126,6 +158,8 @@ const encryptValue = async (value, dataType, metadata = {}) => {
     keyPurpose: policy.keyPurpose,
     keyId: keyRecord.keyId,
     keyVersion: keyRecord.version,
+    ownerType: keyRecord.ownerType || 'SYSTEM',
+    ownerUserId: keyRecord.ownerUserId ? String(keyRecord.ownerUserId) : '',
 
     ciphertext,
     ciphertextEncoding: 'base64-json-envelope',
@@ -133,7 +167,7 @@ const encryptValue = async (value, dataType, metadata = {}) => {
     metadata: {
       fieldName: metadata.fieldName || '',
       collectionName: metadata.collectionName || '',
-      ownerId: metadata.ownerId ? String(metadata.ownerId) : '',
+      ownerId: ownerUserId ? String(ownerUserId) : '',
       documentId: metadata.documentId ? String(metadata.documentId) : '',
     },
 
@@ -163,6 +197,15 @@ const decryptValue = async (encryptedEnvelope) => {
   if (keyRecord.purpose !== encryptedEnvelope.keyPurpose) {
     throw new Error(
       `Key purpose mismatch. Envelope=${encryptedEnvelope.keyPurpose}, key=${keyRecord.purpose}`
+    );
+  }
+
+  const envelopeOwnerId = encryptedEnvelope.ownerUserId || encryptedEnvelope.metadata?.ownerId || '';
+  const keyOwnerId = keyRecord.ownerUserId ? String(keyRecord.ownerUserId) : '';
+
+  if (envelopeOwnerId && keyOwnerId && envelopeOwnerId !== keyOwnerId) {
+    throw new Error(
+      `Key owner mismatch. Envelope owner=${envelopeOwnerId}, key owner=${keyOwnerId}`
     );
   }
 

@@ -5,20 +5,12 @@
  *
  * Field-level encryption wrapper for the secure banking project.
  *
-* This module chooses RSA or ECC based on the active key metadata returned
-* by key.service.js. Encryption/decryption is delegated only to custom RSA/ECC modules.
- * Stored encrypted field shape:
- *   {
- *     protected: true,
- *     algorithm: 'RSA' | 'ECC',
- *     keyId: 'rsa-user-profile-v1',
- *     keyPurpose: 'USER_PROFILE',
- *     version: 1,
- *     ciphertext: '<base64 envelope>',
- *     mac: '<hex>',
- *     macAlgorithm: 'HMAC-SHA256-LAB',
- *     createdAt: '<ISO date>'
- *   }
+ * This module chooses RSA or ECC based on the active key metadata returned
+ * by key.service.js. Encryption/decryption is delegated only to custom RSA/ECC modules.
+ *
+ * Updated design:
+ *   - context.ownerId is required for user-owned data.
+ *   - Encryption selects the active key belonging to that specific user.
  */
 
 const {
@@ -91,7 +83,10 @@ const encryptField = async (value, dataType, context = {}) => {
   if (value === undefined) return undefined;
   if (isEncryptedField(value)) return value;
 
-  const keyRecord = await getActiveKeyForDataType(dataType);
+  const keyRecord = await getActiveKeyForDataType(dataType, {
+    ownerId: context.ownerId || context.ownerUserId || context.userId,
+  });
+
   const plainText = serializePlainValue(value);
 
   const ciphertext = encryptWithAlgorithm(
@@ -105,6 +100,8 @@ const encryptField = async (value, dataType, context = {}) => {
     algorithm: keyRecord.algorithm,
     keyId: keyRecord.keyId,
     keyPurpose: keyRecord.purpose,
+    ownerType: keyRecord.ownerType || 'SYSTEM',
+    ownerUserId: keyRecord.ownerUserId ? String(keyRecord.ownerUserId) : '',
     version: keyRecord.version,
     ciphertext,
     macAlgorithm: 'HMAC-SHA256-LAB',
@@ -132,6 +129,16 @@ const decryptField = async (encryptedField, context = {}) => {
   }
 
   const keyRecord = await getKeyRecordById(encryptedField.keyId);
+
+  const envelopeOwnerId = encryptedField.ownerUserId || '';
+  const keyOwnerId = keyRecord.ownerUserId ? String(keyRecord.ownerUserId) : '';
+
+  if (envelopeOwnerId && keyOwnerId && envelopeOwnerId !== keyOwnerId) {
+    throw new Error(
+      `Encrypted field owner mismatch. Envelope owner=${envelopeOwnerId}, key owner=${keyOwnerId}`
+    );
+  }
+
   const privateKey = getPrivateKeyForRecord(keyRecord);
 
   const plainText = decryptWithAlgorithm(

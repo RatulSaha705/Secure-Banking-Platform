@@ -54,9 +54,9 @@ const ENCRYPTION_POLICY = Object.freeze({
   },
 
   [DATA_TYPES.TRANSACTION_DATA]: {
-    algorithm: ALGORITHMS.RSA,
+    algorithm: ALGORITHMS.ECC,
     keyPurpose: 'TRANSACTION_DATA',
-    description: 'Sensitive transaction and transfer records',
+    description: 'Sensitive transaction history and transfer records',
   },
 
   [DATA_TYPES.SUPPORT_TICKET]: {

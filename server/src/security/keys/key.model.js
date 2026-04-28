@@ -7,6 +7,11 @@
  *
  * MongoDB stores public keys and key metadata only.
  * Private keys are NOT stored in MongoDB.
+ *
+ * Updated design:
+ *   - SYSTEM keys can still exist for setup/tests/backward compatibility.
+ *   - USER keys belong to one specific user through ownerUserId.
+ *   - Every registered user receives their own RSA/ECC key records.
  */
 
 const mongoose = require('mongoose');
@@ -30,6 +35,11 @@ const KEY_STATUSES = Object.freeze([
   'COMPROMISED',
 ]);
 
+const KEY_OWNER_TYPES = Object.freeze([
+  'SYSTEM',
+  'USER',
+]);
+
 const cryptoKeySchema = new mongoose.Schema(
   {
     keyId: {
@@ -38,6 +48,20 @@ const cryptoKeySchema = new mongoose.Schema(
       unique: true,
       trim: true,
       match: /^[a-z0-9][a-z0-9_-]*$/i,
+    },
+
+    ownerType: {
+      type: String,
+      required: true,
+      enum: KEY_OWNER_TYPES,
+      default: 'SYSTEM',
+      index: true,
+    },
+
+    ownerUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+      index: true,
     },
 
     algorithm: {
@@ -115,23 +139,35 @@ const cryptoKeySchema = new mongoose.Schema(
 );
 
 cryptoKeySchema.index(
-  { algorithm: 1, purpose: 1, status: 1 },
-  { name: 'algorithm_purpose_status_idx' }
+  { ownerType: 1, ownerUserId: 1, algorithm: 1, purpose: 1, status: 1 },
+  { name: 'owner_algorithm_purpose_status_idx' }
 );
 
 cryptoKeySchema.index(
-  { algorithm: 1, purpose: 1, version: -1 },
-  { name: 'algorithm_purpose_version_idx' }
+  { ownerType: 1, ownerUserId: 1, algorithm: 1, purpose: 1, version: -1 },
+  { name: 'owner_algorithm_purpose_version_idx' }
 );
 
 cryptoKeySchema.index(
-  { algorithm: 1, purpose: 1, status: 1 },
+  { ownerType: 1, ownerUserId: 1, algorithm: 1, purpose: 1, status: 1 },
   {
     unique: true,
     partialFilterExpression: { status: 'ACTIVE' },
-    name: 'one_active_key_per_algorithm_purpose',
+    name: 'one_active_key_per_owner_algorithm_purpose',
   }
 );
+
+cryptoKeySchema.pre('validate', function validateOwner(next) {
+  if (this.ownerType === 'USER' && !this.ownerUserId) {
+    return next(new Error('ownerUserId is required for USER-owned keys'));
+  }
+
+  if (this.ownerType === 'SYSTEM' && this.ownerUserId) {
+    return next(new Error('ownerUserId must be empty for SYSTEM-owned keys'));
+  }
+
+  return next();
+});
 
 cryptoKeySchema.pre('validate', function preventPrivateKeyStorage(next) {
   const raw = this.toObject({ depopulate: true });
@@ -161,4 +197,5 @@ module.exports = {
   KEY_ALGORITHMS,
   KEY_PURPOSES,
   KEY_STATUSES,
+  KEY_OWNER_TYPES,
 };
