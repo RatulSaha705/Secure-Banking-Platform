@@ -5,15 +5,34 @@
  *
  * Feature 18 + Feature 19 storage wrapper.
  *
+ * Strict encrypted DB rule:
+ *   Only _id may stay readable in MongoDB.
+ *   Every other value must be encrypted before saving.
+ *
  * Main API:
  *   encryptSensitiveFields(modelName, data, options)
  *   decryptSensitiveFields(modelName, encryptedData, options)
  *
- * This module:
- *   - encrypts sensitive fields before MongoDB save
- *   - adds MAC integrity protection
- *   - verifies MAC before decrypting
- *   - uses RSA/ECC through the dual asymmetric encryption module
+ * Why this file changed:
+ *   In the old system, some fields like userId, role, status, attempts,
+ *   dates, etc. were plaintext.
+ *
+ *   In the new system, those fields are encrypted too.
+ *   Therefore this wrapper must not depend on plaintext userId/status/date fields.
+ *
+ * Required owner rule:
+ *   For real user-owned records, pass options.ownerId.
+ *
+ * Example:
+ *   await encryptSensitiveFields('USER', userData, {
+ *     ownerId: userId,
+ *     documentId: userId,
+ *   });
+ *
+ *   await encryptSensitiveFields('TWO_FACTOR_CHALLENGE', challengeData, {
+ *     ownerId: userId,
+ *     documentId: challengeId,
+ *   });
  */
 
 const {
@@ -37,6 +56,10 @@ const STORAGE_ENVELOPE_VERSION = 1;
 const STORAGE_TYPE = 'ENCRYPTED_FIELD';
 const MAC_ALGORITHM = 'HMAC-SHA256-LAB';
 
+const SYSTEM_ALLOWED_MODELS = Object.freeze([
+  'TEST',
+]);
+
 const isEncryptedStorageEnvelope = (value) => {
   return Boolean(
     value &&
@@ -51,7 +74,9 @@ const isEncryptedStorageEnvelope = (value) => {
 };
 
 const clonePlainObject = (value) => {
-  if (!value || typeof value !== 'object') return value;
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
 
   if (typeof value.toObject === 'function') {
     return value.toObject();
@@ -60,30 +85,113 @@ const clonePlainObject = (value) => {
   return JSON.parse(JSON.stringify(value));
 };
 
-const getDocumentId = (document, explicitDocumentId) => {
-  if (explicitDocumentId !== undefined && explicitDocumentId !== null) {
-    return String(explicitDocumentId);
+const toIdString = (value) => {
+  if (value === undefined || value === null) {
+    return '';
   }
 
-  if (!document || typeof document !== 'object') return '';
+  if (typeof value === 'object') {
+    if (value._id) {
+      return String(value._id);
+    }
 
-  return String(document._id || document.id || '');
+    if (value.id) {
+      return String(value.id);
+    }
+
+    return '';
+  }
+
+  return String(value);
 };
 
-const getOwnerId = (document, explicitOwnerId) => {
-  if (explicitOwnerId !== undefined && explicitOwnerId !== null) {
-    return String(explicitOwnerId);
+const getDocumentId = (document, explicitDocumentId) => {
+  const directDocumentId = toIdString(explicitDocumentId);
+
+  if (directDocumentId) {
+    return directDocumentId;
   }
 
-  if (!document || typeof document !== 'object') return '';
+  if (!document || typeof document !== 'object') {
+    return '';
+  }
+
+  return toIdString(document._id || document.id || '');
+};
+
+const getEnvelopeOwnerId = (value) => {
+  if (!isEncryptedStorageEnvelope(value)) {
+    return '';
+  }
 
   return String(
-    document.ownerId ||
-    document.userId ||
-    document.createdBy ||
-    document.emailLookupHash ||
-    document._id ||
+    value.ownerUserId ||
+    value.metadata?.ownerId ||
+    value.metadata?.userId ||
     ''
+  );
+};
+
+const getEnvelopeDocumentId = (value) => {
+  if (!isEncryptedStorageEnvelope(value)) {
+    return '';
+  }
+
+  return String(
+    value.metadata?.documentId ||
+    ''
+  );
+};
+
+const getOwnerIdForEncryption = (modelName, document, explicitOwnerId) => {
+  const ownerId = toIdString(explicitOwnerId);
+
+  if (ownerId) {
+    return ownerId;
+  }
+
+  const documentId = getDocumentId(document);
+
+  if (modelName === 'USER' && documentId) {
+    return documentId;
+  }
+
+  if (SYSTEM_ALLOWED_MODELS.includes(modelName)) {
+    return '';
+  }
+
+  throw new Error(
+    `ownerId is required to encrypt ${modelName}. ` +
+    'Because every field except _id is encrypted, ownerId must be passed explicitly.'
+  );
+};
+
+const getOwnerIdForDecryption = (modelName, document, fieldEnvelope, explicitOwnerId) => {
+  const ownerId = toIdString(explicitOwnerId);
+
+  if (ownerId) {
+    return ownerId;
+  }
+
+  const envelopeOwnerId = getEnvelopeOwnerId(fieldEnvelope);
+
+  if (envelopeOwnerId) {
+    return envelopeOwnerId;
+  }
+
+  const documentId = getDocumentId(document);
+
+  if (modelName === 'USER' && documentId) {
+    return documentId;
+  }
+
+  if (SYSTEM_ALLOWED_MODELS.includes(modelName)) {
+    return '';
+  }
+
+  throw new Error(
+    `ownerId is required to decrypt ${modelName}. ` +
+    'The encrypted field does not contain owner metadata.'
   );
 };
 
@@ -102,8 +210,13 @@ const buildStorageContext = ({
 });
 
 const encryptFieldForStorage = async (value, dataType, context = {}) => {
-  if (value === undefined) return undefined;
-  if (isEncryptedStorageEnvelope(value)) return value;
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (isEncryptedStorageEnvelope(value)) {
+    return value;
+  }
 
   const encrypted = await encryptValue(value, dataType, {
     fieldName: context.fieldName,
@@ -124,8 +237,13 @@ const encryptFieldForStorage = async (value, dataType, context = {}) => {
 };
 
 const decryptFieldFromStorage = async (encryptedField, context = {}) => {
-  if (encryptedField === undefined) return undefined;
-  if (encryptedField === null) return null;
+  if (encryptedField === undefined) {
+    return undefined;
+  }
+
+  if (encryptedField === null) {
+    return null;
+  }
 
   if (!isEncryptedStorageEnvelope(encryptedField)) {
     return encryptedField;
@@ -137,17 +255,33 @@ const decryptFieldFromStorage = async (encryptedField, context = {}) => {
 };
 
 const encryptSensitiveFields = async (modelName, data, options = {}) => {
-  if (!data || typeof data !== 'object') return data;
+  if (!data || typeof data !== 'object') {
+    return data;
+  }
 
   const normalizedModelName = normalizeModelName(modelName);
   const policy = getStoragePolicy(normalizedModelName);
   const output = clonePlainObject(data);
-  const ownerId = getOwnerId(output, options.ownerId);
-  const documentId = getDocumentId(output, options.documentId);
 
-  for (const [fieldName, dataType] of Object.entries(policy.sensitiveFields)) {
-    if (!Object.prototype.hasOwnProperty.call(output, fieldName)) continue;
-    if (output[fieldName] === undefined) continue;
+  const ownerId = getOwnerIdForEncryption(
+    normalizedModelName,
+    output,
+    options.ownerId || options.ownerUserId || options.userId
+  );
+
+  const documentId = getDocumentId(
+    output,
+    options.documentId || options.recordId
+  );
+
+  for (const [fieldName, configuredDataType] of Object.entries(policy.sensitiveFields)) {
+    if (!Object.prototype.hasOwnProperty.call(output, fieldName)) {
+      continue;
+    }
+
+    if (output[fieldName] === undefined) {
+      continue;
+    }
 
     const context = buildStorageContext({
       modelName: normalizedModelName,
@@ -157,9 +291,14 @@ const encryptSensitiveFields = async (modelName, data, options = {}) => {
       documentId,
     });
 
+    const dataType = configuredDataType || getDataTypeForField(
+      normalizedModelName,
+      fieldName
+    );
+
     output[fieldName] = await encryptFieldForStorage(
       output[fieldName],
-      dataType || getDataTypeForField(normalizedModelName, fieldName),
+      dataType,
       context
     );
   }
@@ -168,17 +307,39 @@ const encryptSensitiveFields = async (modelName, data, options = {}) => {
 };
 
 const decryptSensitiveFields = async (modelName, encryptedData, options = {}) => {
-  if (!encryptedData || typeof encryptedData !== 'object') return encryptedData;
+  if (!encryptedData || typeof encryptedData !== 'object') {
+    return encryptedData;
+  }
 
   const normalizedModelName = normalizeModelName(modelName);
   const policy = getStoragePolicy(normalizedModelName);
   const output = clonePlainObject(encryptedData);
-  const ownerId = getOwnerId(output, options.ownerId);
-  const documentId = getDocumentId(output, options.documentId);
+
+  const fallbackDocumentId = getDocumentId(
+    output,
+    options.documentId || options.recordId
+  );
 
   for (const fieldName of Object.keys(policy.sensitiveFields)) {
-    if (!Object.prototype.hasOwnProperty.call(output, fieldName)) continue;
-    if (!isEncryptedStorageEnvelope(output[fieldName])) continue;
+    if (!Object.prototype.hasOwnProperty.call(output, fieldName)) {
+      continue;
+    }
+
+    if (!isEncryptedStorageEnvelope(output[fieldName])) {
+      continue;
+    }
+
+    const fieldEnvelope = output[fieldName];
+
+    const ownerId = getOwnerIdForDecryption(
+      normalizedModelName,
+      output,
+      fieldEnvelope,
+      options.ownerId || options.ownerUserId || options.userId
+    );
+
+    const envelopeDocumentId = getEnvelopeDocumentId(fieldEnvelope);
+    const documentId = fallbackDocumentId || envelopeDocumentId;
 
     const context = buildStorageContext({
       modelName: normalizedModelName,
@@ -188,7 +349,10 @@ const decryptSensitiveFields = async (modelName, encryptedData, options = {}) =>
       documentId,
     });
 
-    output[fieldName] = await decryptFieldFromStorage(output[fieldName], context);
+    output[fieldName] = await decryptFieldFromStorage(
+      fieldEnvelope,
+      context
+    );
   }
 
   return output;
@@ -201,8 +365,22 @@ const encryptManySensitiveFields = async (modelName, records, options = {}) => {
 
   const output = [];
 
-  for (const record of records) {
-    output.push(await encryptSensitiveFields(modelName, record, options));
+  for (let i = 0; i < records.length; i += 1) {
+    const record = records[i];
+
+    output.push(
+      await encryptSensitiveFields(modelName, record, {
+        ...options,
+        ownerId:
+          typeof options.ownerIdResolver === 'function'
+            ? options.ownerIdResolver(record, i)
+            : options.ownerId,
+        documentId:
+          typeof options.documentIdResolver === 'function'
+            ? options.documentIdResolver(record, i)
+            : options.documentId,
+      })
+    );
   }
 
   return output;
@@ -215,8 +393,22 @@ const decryptManySensitiveFields = async (modelName, records, options = {}) => {
 
   const output = [];
 
-  for (const record of records) {
-    output.push(await decryptSensitiveFields(modelName, record, options));
+  for (let i = 0; i < records.length; i += 1) {
+    const record = records[i];
+
+    output.push(
+      await decryptSensitiveFields(modelName, record, {
+        ...options,
+        ownerId:
+          typeof options.ownerIdResolver === 'function'
+            ? options.ownerIdResolver(record, i)
+            : options.ownerId,
+        documentId:
+          typeof options.documentIdResolver === 'function'
+            ? options.documentIdResolver(record, i)
+            : options.documentId,
+      })
+    );
   }
 
   return output;

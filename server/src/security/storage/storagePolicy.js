@@ -3,26 +3,118 @@
 /**
  * server/src/security/storage/storagePolicy.js
  *
- * Feature 18: Encrypted Data Storage Policy
+ * Strict encrypted DB storage policy.
  *
- * This file decides which fields are sensitive for each model.
- * Controllers/services should not manually choose fields every time.
+ * Rule:
+ *   Only MongoDB _id is allowed to remain readable.
+ *   Every other stored value must be encrypted before saving.
+ *
+ * Important:
+ *   This file only defines WHAT must be encrypted.
+ *   Services must call encryptSensitiveFields/decryptSensitiveFields before save/read.
  */
 
 const MODEL_STORAGE_POLICIES = Object.freeze({
   USER: {
     modelName: 'USER',
     collectionName: 'users',
-    defaultDataType: 'USER_REGISTRATION',
+    defaultDataType: 'USER_PROFILE',
     sensitiveFields: {
+      passwordHash: 'USER_PROFILE',
+      passwordSalt: 'USER_PROFILE',
+      passwordIterations: 'USER_PROFILE',
+      passwordHashAlgorithm: 'USER_PROFILE',
+      passwordHashBytes: 'USER_PROFILE',
+
       username: 'USER_REGISTRATION',
       email: 'USER_REGISTRATION',
       contact: 'USER_REGISTRATION',
       phone: 'USER_REGISTRATION',
       fullName: 'USER_PROFILE',
-      address: 'USER_PROFILE',
-      dateOfBirth: 'USER_PROFILE',
-      nid: 'USER_PROFILE',
+
+      emailLookupHash: 'USER_PROFILE',
+      usernameLookupHash: 'USER_PROFILE',
+
+      role: 'USER_PROFILE',
+      isActive: 'USER_PROFILE',
+      twoFactorEnabled: 'USER_PROFILE',
+
+      createdAt: 'USER_PROFILE',
+      updatedAt: 'USER_PROFILE',
+    },
+  },
+
+  PENDING_REGISTRATION: {
+    modelName: 'PENDING_REGISTRATION',
+    collectionName: 'pendingregistrations',
+    defaultDataType: 'USER_REGISTRATION',
+    sensitiveFields: {
+      challengeId: 'USER_REGISTRATION',
+      userId: 'USER_REGISTRATION',
+
+      emailLookupHash: 'USER_REGISTRATION',
+      usernameLookupHash: 'USER_REGISTRATION',
+      maskedEmail: 'USER_REGISTRATION',
+
+      encryptedUserFields: 'USER_REGISTRATION',
+      passwordFields: 'USER_REGISTRATION',
+
+      otpHash: 'USER_REGISTRATION',
+      status: 'USER_REGISTRATION',
+      attempts: 'USER_REGISTRATION',
+      maxAttempts: 'USER_REGISTRATION',
+      expiresAt: 'USER_REGISTRATION',
+      verifiedAt: 'USER_REGISTRATION',
+      usedAt: 'USER_REGISTRATION',
+
+      createdAt: 'USER_REGISTRATION',
+      updatedAt: 'USER_REGISTRATION',
+    },
+  },
+
+  TWO_FACTOR_CHALLENGE: {
+    modelName: 'TWO_FACTOR_CHALLENGE',
+    collectionName: 'twofactorchallenges',
+    defaultDataType: 'USER_PROFILE',
+    sensitiveFields: {
+      userId: 'USER_PROFILE',
+      otpHash: 'USER_PROFILE',
+      purpose: 'USER_PROFILE',
+      status: 'USER_PROFILE',
+      attempts: 'USER_PROFILE',
+      maxAttempts: 'USER_PROFILE',
+      expiresAt: 'USER_PROFILE',
+      verifiedAt: 'USER_PROFILE',
+      usedAt: 'USER_PROFILE',
+
+      createdAt: 'USER_PROFILE',
+      updatedAt: 'USER_PROFILE',
+    },
+  },
+
+  REFRESH_SESSION: {
+    modelName: 'REFRESH_SESSION',
+    collectionName: 'refreshsessions',
+    defaultDataType: 'USER_PROFILE',
+    sensitiveFields: {
+      userId: 'USER_PROFILE',
+      refreshTokenHash: 'USER_PROFILE',
+      status: 'USER_PROFILE',
+
+      ipAddress: 'USER_PROFILE',
+      userAgent: 'USER_PROFILE',
+
+      lastUsedAt: 'USER_PROFILE',
+      lastActivityAt: 'USER_PROFILE',
+      idleExpiresAt: 'USER_PROFILE',
+      expiresAt: 'USER_PROFILE',
+
+      revokedAt: 'USER_PROFILE',
+      revokedReason: 'USER_PROFILE',
+      replacedBySessionId: 'USER_PROFILE',
+
+      createdAt: 'USER_PROFILE',
+      updatedAt: 'USER_PROFILE',
     },
   },
 
@@ -31,6 +123,7 @@ const MODEL_STORAGE_POLICIES = Object.freeze({
     collectionName: 'profiles',
     defaultDataType: 'USER_PROFILE',
     sensitiveFields: {
+      userId: 'USER_PROFILE',
       username: 'USER_PROFILE',
       email: 'USER_PROFILE',
       contact: 'USER_PROFILE',
@@ -39,6 +132,8 @@ const MODEL_STORAGE_POLICIES = Object.freeze({
       address: 'USER_PROFILE',
       dateOfBirth: 'USER_PROFILE',
       nid: 'USER_PROFILE',
+      createdAt: 'USER_PROFILE',
+      updatedAt: 'USER_PROFILE',
     },
   },
 
@@ -47,12 +142,15 @@ const MODEL_STORAGE_POLICIES = Object.freeze({
     collectionName: 'accounts',
     defaultDataType: 'ACCOUNT_DETAILS',
     sensitiveFields: {
+      userId: 'ACCOUNT_DETAILS',
       accountNumber: 'ACCOUNT_DETAILS',
       accountType: 'ACCOUNT_DETAILS',
       accountStatus: 'ACCOUNT_DETAILS',
       balance: 'ACCOUNT_DETAILS',
       branchName: 'ACCOUNT_DETAILS',
       routingNumber: 'ACCOUNT_DETAILS',
+      createdAt: 'ACCOUNT_DETAILS',
+      updatedAt: 'ACCOUNT_DETAILS',
     },
   },
 
@@ -61,12 +159,15 @@ const MODEL_STORAGE_POLICIES = Object.freeze({
     collectionName: 'beneficiaries',
     defaultDataType: 'BENEFICIARY_DATA',
     sensitiveFields: {
+      userId: 'BENEFICIARY_DATA',
       beneficiaryName: 'BENEFICIARY_DATA',
       beneficiaryEmail: 'BENEFICIARY_DATA',
       beneficiaryPhone: 'BENEFICIARY_DATA',
       beneficiaryAccountNumber: 'BENEFICIARY_DATA',
       beneficiaryBankName: 'BENEFICIARY_DATA',
       nickname: 'BENEFICIARY_DATA',
+      createdAt: 'BENEFICIARY_DATA',
+      updatedAt: 'BENEFICIARY_DATA',
     },
   },
 
@@ -75,6 +176,7 @@ const MODEL_STORAGE_POLICIES = Object.freeze({
     collectionName: 'transactions',
     defaultDataType: 'TRANSACTION_DATA',
     sensitiveFields: {
+      userId: 'TRANSACTION_DATA',
       fromAccount: 'TRANSACTION_DATA',
       toAccount: 'TRANSACTION_DATA',
       amount: 'TRANSACTION_DATA',
@@ -82,6 +184,10 @@ const MODEL_STORAGE_POLICIES = Object.freeze({
       reference: 'TRANSACTION_DATA',
       receiverName: 'TRANSACTION_DATA',
       receiverBank: 'TRANSACTION_DATA',
+      transactionType: 'TRANSACTION_DATA',
+      status: 'TRANSACTION_DATA',
+      createdAt: 'TRANSACTION_DATA',
+      updatedAt: 'TRANSACTION_DATA',
     },
   },
 
@@ -90,11 +196,16 @@ const MODEL_STORAGE_POLICIES = Object.freeze({
     collectionName: 'supporttickets',
     defaultDataType: 'SUPPORT_TICKET',
     sensitiveFields: {
+      userId: 'SUPPORT_TICKET',
       title: 'SUPPORT_TICKET',
       message: 'SUPPORT_TICKET',
       description: 'SUPPORT_TICKET',
       reply: 'TICKET_COMMENT',
       comments: 'TICKET_COMMENT',
+      status: 'SUPPORT_TICKET',
+      priority: 'SUPPORT_TICKET',
+      createdAt: 'SUPPORT_TICKET',
+      updatedAt: 'SUPPORT_TICKET',
     },
   },
 
@@ -103,9 +214,14 @@ const MODEL_STORAGE_POLICIES = Object.freeze({
     collectionName: 'notifications',
     defaultDataType: 'NOTIFICATION',
     sensitiveFields: {
+      userId: 'NOTIFICATION',
       title: 'NOTIFICATION',
       message: 'NOTIFICATION',
       body: 'NOTIFICATION',
+      type: 'NOTIFICATION',
+      isRead: 'NOTIFICATION',
+      createdAt: 'NOTIFICATION',
+      updatedAt: 'NOTIFICATION',
     },
   },
 });
@@ -115,6 +231,20 @@ const MODEL_ALIASES = Object.freeze({
   USERS: 'USER',
   AUTH: 'USER',
   REGISTRATION: 'USER',
+
+  PENDING_REGISTRATION: 'PENDING_REGISTRATION',
+  PENDINGREGISTRATION: 'PENDING_REGISTRATION',
+  PENDING_REGISTRATIONS: 'PENDING_REGISTRATION',
+
+  TWO_FACTOR_CHALLENGE: 'TWO_FACTOR_CHALLENGE',
+  TWOFACTORCHALLENGE: 'TWO_FACTOR_CHALLENGE',
+  TWO_FACTOR: 'TWO_FACTOR_CHALLENGE',
+  OTP: 'TWO_FACTOR_CHALLENGE',
+
+  REFRESH_SESSION: 'REFRESH_SESSION',
+  REFRESHSESSION: 'REFRESH_SESSION',
+  SESSION: 'REFRESH_SESSION',
+  SESSIONS: 'REFRESH_SESSION',
 
   PROFILE: 'PROFILE',
   PROFILES: 'PROFILE',

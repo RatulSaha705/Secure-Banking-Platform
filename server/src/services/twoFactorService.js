@@ -3,20 +3,31 @@
 /**
  * server/src/services/twoFactorService.js
  *
- * Feature 9: Two-Factor Authentication with email OTP.
+ * Strict encrypted Two-Factor Authentication service.
  *
- * Random OTP is generated every time.
- * Plaintext OTP is never stored.
- * OTP is sent from bank email to user's registered email.
+ * New DB rule:
+ *   Only _id is readable.
+ *   All OTP challenge values are encrypted:
+ *     userId, otpHash, purpose, status, attempts, dates, etc.
  *
- * Custom HMAC-SHA256-LAB is used to hash OTP values.
+ * Important:
+ *   _id is used as the challenge identifier.
+ *   For pending registration, _id is pendingRegistrationId.
+ *   For login 2FA, _id is challengeId.
  */
 
 const crypto = require('crypto');
+
 const PendingRegistration = require('../models/PendingRegistration');
 const TwoFactorChallenge = require('../models/TwoFactorChallenge');
+
 const { hmacSha256Hex, timingSafeEqualHex } = require('../security/hash/hmac');
 const { sendOtpEmail } = require('./emailService');
+
+const {
+  encryptSensitiveFields,
+  decryptSensitiveFields,
+} = require('../security/storage');
 
 const OTP_LENGTH = 6;
 const DEFAULT_OTP_TTL_MINUTES = 5;
@@ -38,11 +49,47 @@ const getOtpSecret = () => {
 };
 
 const getOtpTtlMinutes = () => {
-  return Number(process.env.TWO_FACTOR_OTP_TTL_MINUTES || DEFAULT_OTP_TTL_MINUTES);
+  const value = Number(process.env.TWO_FACTOR_OTP_TTL_MINUTES || DEFAULT_OTP_TTL_MINUTES);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return DEFAULT_OTP_TTL_MINUTES;
+  }
+
+  return value;
 };
 
 const getMaxAttempts = () => {
-  return Number(process.env.TWO_FACTOR_MAX_ATTEMPTS || DEFAULT_MAX_ATTEMPTS);
+  const value = Number(process.env.TWO_FACTOR_MAX_ATTEMPTS || DEFAULT_MAX_ATTEMPTS);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return DEFAULT_MAX_ATTEMPTS;
+  }
+
+  return value;
+};
+
+const nowIso = () => {
+  return new Date().toISOString();
+};
+
+const toIsoString = (value) => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  return String(value);
+};
+
+const isExpired = (isoDateValue) => {
+  if (!isoDateValue) {
+    return true;
+  }
+
+  return new Date(isoDateValue).getTime() < Date.now();
 };
 
 const generateNumericOtp = (length = OTP_LENGTH) => {
@@ -73,17 +120,29 @@ const hashOtp = ({ purpose, challengeId, subjectId, otp }) => {
 };
 
 const maskEmail = (email) => {
-  if (!email || typeof email !== 'string') return '';
+  if (!email || typeof email !== 'string') {
+    return '';
+  }
 
   const [name, domain] = email.split('@');
-  if (!name || !domain) return '';
+
+  if (!name || !domain) {
+    return '';
+  }
 
   const visible = name.slice(0, 2);
   return `${visible}${'*'.repeat(Math.max(name.length - 2, 3))}@${domain}`;
 };
 
+const shouldReturnDevOtp = () => {
+  return (
+    process.env.NODE_ENV !== 'production' &&
+    process.env.AUTH_DEV_RETURN_OTP === 'true'
+  );
+};
+
 const attachDevOtp = (response, otp) => {
-  if (process.env.AUTH_DEV_RETURN_OTP === 'true') {
+  if (shouldReturnDevOtp()) {
     return {
       ...response,
       devOtp: otp,
@@ -91,6 +150,134 @@ const attachDevOtp = (response, otp) => {
   }
 
   return response;
+};
+
+const buildPendingRegistrationContext = ({ ownerId, pendingRegistrationId }) => {
+  return {
+    ownerId: String(ownerId),
+    documentId: String(pendingRegistrationId),
+    collectionName: 'pendingregistrations',
+  };
+};
+
+const buildTwoFactorContext = ({ ownerId, challengeId }) => {
+  return {
+    ownerId: String(ownerId),
+    documentId: String(challengeId),
+    collectionName: 'twofactorchallenges',
+  };
+};
+
+const decryptPendingRegistration = async (encryptedPending) => {
+  if (!encryptedPending) {
+    return null;
+  }
+
+  const pendingRegistrationId = String(encryptedPending._id);
+
+  const decrypted = await decryptSensitiveFields(
+    'PENDING_REGISTRATION',
+    encryptedPending,
+    {
+      documentId: pendingRegistrationId,
+      collectionName: 'pendingregistrations',
+    }
+  );
+
+  decrypted._id = pendingRegistrationId;
+  decrypted.pendingRegistrationId = pendingRegistrationId;
+
+  return decrypted;
+};
+
+const encryptPendingRegistration = async (plainPending) => {
+  const pendingRegistrationId = String(plainPending._id || plainPending.pendingRegistrationId);
+  const ownerId = String(plainPending.userId);
+
+  return encryptSensitiveFields(
+    'PENDING_REGISTRATION',
+    {
+      ...plainPending,
+      _id: pendingRegistrationId,
+    },
+    buildPendingRegistrationContext({
+      ownerId,
+      pendingRegistrationId,
+    })
+  );
+};
+
+const savePendingRegistrationPlain = async (plainPending) => {
+  const encryptedPending = await encryptPendingRegistration({
+    ...plainPending,
+    updatedAt: nowIso(),
+  });
+
+  await PendingRegistration.replaceOne(
+    {
+      _id: String(encryptedPending._id),
+    },
+    encryptedPending,
+    {
+      upsert: false,
+    }
+  );
+};
+
+const decryptTwoFactorChallenge = async (encryptedChallenge) => {
+  if (!encryptedChallenge) {
+    return null;
+  }
+
+  const challengeId = String(encryptedChallenge._id);
+
+  const decrypted = await decryptSensitiveFields(
+    'TWO_FACTOR_CHALLENGE',
+    encryptedChallenge,
+    {
+      documentId: challengeId,
+      collectionName: 'twofactorchallenges',
+    }
+  );
+
+  decrypted._id = challengeId;
+  decrypted.challengeId = challengeId;
+
+  return decrypted;
+};
+
+const encryptTwoFactorChallenge = async (plainChallenge) => {
+  const challengeId = String(plainChallenge._id || plainChallenge.challengeId);
+  const ownerId = String(plainChallenge.userId);
+
+  return encryptSensitiveFields(
+    'TWO_FACTOR_CHALLENGE',
+    {
+      ...plainChallenge,
+      _id: challengeId,
+    },
+    buildTwoFactorContext({
+      ownerId,
+      challengeId,
+    })
+  );
+};
+
+const saveTwoFactorChallengePlain = async (plainChallenge) => {
+  const encryptedChallenge = await encryptTwoFactorChallenge({
+    ...plainChallenge,
+    updatedAt: nowIso(),
+  });
+
+  await TwoFactorChallenge.replaceOne(
+    {
+      _id: String(encryptedChallenge._id),
+    },
+    encryptedChallenge,
+    {
+      upsert: false,
+    }
+  );
 };
 
 const createRegistrationOtpChallenge = async ({
@@ -136,10 +323,11 @@ const createLoginTwoFactorChallenge = async ({ userId, toEmail }) => {
   const ttlMinutes = getOtpTtlMinutes();
   const maxAttempts = getMaxAttempts();
   const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+  const timestamp = nowIso();
 
-  await TwoFactorChallenge.create({
-    userId,
-    challengeId,
+  const plainChallenge = {
+    _id: challengeId,
+    userId: String(userId),
     otpHash: hashOtp({
       purpose: 'LOGIN',
       challengeId,
@@ -150,8 +338,15 @@ const createLoginTwoFactorChallenge = async ({ userId, toEmail }) => {
     status: 'PENDING',
     attempts: 0,
     maxAttempts,
-    expiresAt,
-  });
+    expiresAt: expiresAt.toISOString(),
+    verifiedAt: null,
+    usedAt: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+
+  const encryptedChallenge = await encryptTwoFactorChallenge(plainChallenge);
+  await TwoFactorChallenge.create(encryptedChallenge);
 
   await sendOtpEmail({
     to: toEmail,
@@ -163,7 +358,7 @@ const createLoginTwoFactorChallenge = async ({ userId, toEmail }) => {
   return attachDevOtp(
     {
       challengeId,
-      expiresAt,
+      expiresAt: expiresAt.toISOString(),
       deliveryMethod: 'email',
       maskedDestination: maskEmail(toEmail),
     },
@@ -171,13 +366,24 @@ const createLoginTwoFactorChallenge = async ({ userId, toEmail }) => {
   );
 };
 
-const verifyRegistrationOtp = async ({ pendingRegistrationId, challengeId, otp }) => {
-  const pending = await PendingRegistration.findOne({
-    pendingRegistrationId,
-    challengeId,
-  }).select('+otpHash');
+const verifyRegistrationOtp = async ({
+  pendingRegistrationId,
+  challengeId,
+  otp,
+}) => {
+  const encryptedPending = await PendingRegistration.findById(
+    String(pendingRegistrationId)
+  ).lean();
 
-  if (!pending) {
+  if (!encryptedPending) {
+    const error = new Error('Invalid registration verification challenge');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const pending = await decryptPendingRegistration(encryptedPending);
+
+  if (String(pending.challengeId) !== String(challengeId)) {
     const error = new Error('Invalid registration verification challenge');
     error.statusCode = 400;
     throw error;
@@ -189,18 +395,18 @@ const verifyRegistrationOtp = async ({ pendingRegistrationId, challengeId, otp }
     throw error;
   }
 
-  if (pending.expiresAt.getTime() < Date.now()) {
+  if (isExpired(pending.expiresAt)) {
     pending.status = 'EXPIRED';
-    await pending.save();
+    await savePendingRegistrationPlain(pending);
 
     const error = new Error('Registration OTP expired');
     error.statusCode = 400;
     throw error;
   }
 
-  if (pending.attempts >= pending.maxAttempts) {
+  if (Number(pending.attempts) >= Number(pending.maxAttempts)) {
     pending.status = 'CANCELLED';
-    await pending.save();
+    await savePendingRegistrationPlain(pending);
 
     const error = new Error('Too many OTP attempts');
     error.statusCode = 429;
@@ -210,15 +416,16 @@ const verifyRegistrationOtp = async ({ pendingRegistrationId, challengeId, otp }
   const actualHash = hashOtp({
     purpose: 'REGISTRATION',
     challengeId,
-    subjectId: pending.userId.toString(),
+    subjectId: pending.userId,
     otp,
   });
 
   const valid = timingSafeEqualHex(actualHash, pending.otpHash);
-  pending.attempts += 1;
+
+  pending.attempts = Number(pending.attempts) + 1;
 
   if (!valid) {
-    await pending.save();
+    await savePendingRegistrationPlain(pending);
 
     const error = new Error('Invalid registration OTP');
     error.statusCode = 401;
@@ -226,20 +433,37 @@ const verifyRegistrationOtp = async ({ pendingRegistrationId, challengeId, otp }
   }
 
   pending.status = 'VERIFIED';
-  pending.verifiedAt = new Date();
-  await pending.save();
+  pending.verifiedAt = nowIso();
+
+  await savePendingRegistrationPlain(pending);
 
   return pending;
 };
 
-const verifyLoginOtp = async ({ challengeId, userId, otp }) => {
-  const challenge = await TwoFactorChallenge.findOne({
-    challengeId,
-    userId,
-    purpose: 'LOGIN',
-  }).select('+otpHash');
+const verifyLoginOtp = async ({
+  challengeId,
+  userId,
+  otp,
+}) => {
+  const encryptedChallenge = await TwoFactorChallenge.findById(
+    String(challengeId)
+  ).lean();
 
-  if (!challenge) {
+  if (!encryptedChallenge) {
+    const error = new Error('Invalid login verification challenge');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const challenge = await decryptTwoFactorChallenge(encryptedChallenge);
+
+  if (String(challenge.userId) !== String(userId)) {
+    const error = new Error('Invalid login verification challenge');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (challenge.purpose !== 'LOGIN') {
     const error = new Error('Invalid login verification challenge');
     error.statusCode = 400;
     throw error;
@@ -251,18 +475,18 @@ const verifyLoginOtp = async ({ challengeId, userId, otp }) => {
     throw error;
   }
 
-  if (challenge.expiresAt.getTime() < Date.now()) {
+  if (isExpired(challenge.expiresAt)) {
     challenge.status = 'EXPIRED';
-    await challenge.save();
+    await saveTwoFactorChallengePlain(challenge);
 
     const error = new Error('Login OTP expired');
     error.statusCode = 400;
     throw error;
   }
 
-  if (challenge.attempts >= challenge.maxAttempts) {
+  if (Number(challenge.attempts) >= Number(challenge.maxAttempts)) {
     challenge.status = 'CANCELLED';
-    await challenge.save();
+    await saveTwoFactorChallengePlain(challenge);
 
     const error = new Error('Too many OTP attempts');
     error.statusCode = 429;
@@ -277,10 +501,11 @@ const verifyLoginOtp = async ({ challengeId, userId, otp }) => {
   });
 
   const valid = timingSafeEqualHex(actualHash, challenge.otpHash);
-  challenge.attempts += 1;
+
+  challenge.attempts = Number(challenge.attempts) + 1;
 
   if (!valid) {
-    await challenge.save();
+    await saveTwoFactorChallengePlain(challenge);
 
     const error = new Error('Invalid login OTP');
     error.statusCode = 401;
@@ -288,11 +513,12 @@ const verifyLoginOtp = async ({ challengeId, userId, otp }) => {
   }
 
   challenge.status = 'USED';
-  challenge.verifiedAt = new Date();
-  challenge.usedAt = new Date();
-  await challenge.save();
+  challenge.verifiedAt = nowIso();
+  challenge.usedAt = nowIso();
 
-  return true;
+  await saveTwoFactorChallengePlain(challenge);
+
+  return challenge;
 };
 
 module.exports = {
@@ -308,6 +534,10 @@ module.exports = {
 
   createRegistrationOtpChallenge,
   createLoginTwoFactorChallenge,
+
   verifyRegistrationOtp,
   verifyLoginOtp,
+
+  decryptPendingRegistration,
+  decryptTwoFactorChallenge,
 };

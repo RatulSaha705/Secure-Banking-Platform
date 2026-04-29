@@ -4,27 +4,17 @@
  * server/src/routes/keyRoutes.js
  *
  * Feature 17 Key Management routes.
- *
- * IMPORTANT:
- * Protect these routes with admin-only middleware before real use.
+ * These routes are admin-only.
  */
 
 const express = require('express');
 const keyController = require('../controllers/keyController');
+const { requireAuth, requireAdmin } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-const blockUntilAdminMiddlewareIsConnected = (req, res) => {
-  return res.status(403).json({
-    success: false,
-    message:
-      'Key management routes are installed but blocked. Connect admin RBAC middleware before enabling.',
-  });
-};
-
-// Keep this line active until your admin auth middleware is ready.
-// Comment it out only after adding real admin protection.
-router.use(blockUntilAdminMiddlewareIsConnected);
+router.use(requireAuth);
+router.use(requireAdmin);
 
 router.get('/', keyController.listKeys);
 router.post('/', keyController.createKey);

@@ -3,118 +3,110 @@
 /**
  * server/src/models/User.js
  *
- * Feature 1: Refactored User Registration Schema
+ * Strict encrypted user schema.
  *
- * Password:
- *   - NEVER encrypted
- *   - NEVER stored as plaintext
- *   - stored only as salted custom PBKDF-style hash fields
+ * Rule:
+ *   Only _id is readable.
+ *   Every other value is stored as encrypted envelope object.
  *
- * Sensitive user fields:
- *   - username, email, contact, fullName, phone are encrypted envelope objects
- *   - envelopes include algorithm, keyId, ciphertext, MAC, version, createdAt
- *
- * Lookup:
- *   - emailLookupHash and usernameLookupHash are deterministic custom HMAC hashes
- *   - login/duplicate-check use lookup hashes because email/username are encrypted
+ * Important:
+ *   No timestamps option here, because Mongoose timestamps would save
+ *   createdAt/updatedAt as plaintext Date values.
  */
 
 const mongoose = require('mongoose');
 
-const encryptedEnvelopeSchemaType = mongoose.Schema.Types.Mixed;
+const encryptedValue = mongoose.Schema.Types.Mixed;
 
 const userSchema = new mongoose.Schema(
   {
     passwordHash: {
-      type: String,
+      type: encryptedValue,
       required: true,
-      select: false,
     },
 
     passwordSalt: {
-      type: String,
+      type: encryptedValue,
       required: true,
-      select: false,
     },
 
     passwordIterations: {
-      type: Number,
+      type: encryptedValue,
       required: true,
-      default: 10000,
-      select: false,
     },
 
     passwordHashAlgorithm: {
-      type: String,
+      type: encryptedValue,
       required: true,
-      default: 'PBKDF2-HMAC-SHA256-LAB',
-      select: false,
     },
 
     passwordHashBytes: {
-      type: Number,
+      type: encryptedValue,
       required: true,
-      default: 32,
-      select: false,
     },
 
     username: {
-      type: encryptedEnvelopeSchemaType,
+      type: encryptedValue,
       required: true,
     },
 
     email: {
-      type: encryptedEnvelopeSchemaType,
+      type: encryptedValue,
       required: true,
     },
 
     contact: {
-      type: encryptedEnvelopeSchemaType,
+      type: encryptedValue,
       default: null,
     },
 
     fullName: {
-      type: encryptedEnvelopeSchemaType,
+      type: encryptedValue,
       default: null,
     },
 
     phone: {
-      type: encryptedEnvelopeSchemaType,
+      type: encryptedValue,
       default: null,
     },
 
     emailLookupHash: {
-      type: String,
+      type: encryptedValue,
       required: true,
-      unique: true,
-      index: true,
     },
 
     usernameLookupHash: {
-      type: String,
+      type: encryptedValue,
       required: true,
-      unique: true,
-      index: true,
     },
 
     role: {
-      type: String,
-      enum: ['user', 'admin'],
-      default: 'user',
+      type: encryptedValue,
+      required: true,
     },
 
     isActive: {
-      type: Boolean,
-      default: true,
+      type: encryptedValue,
+      required: true,
     },
 
     twoFactorEnabled: {
-      type: Boolean,
-      default: false,
+      type: encryptedValue,
+      required: true,
+    },
+
+    createdAt: {
+      type: encryptedValue,
+      required: true,
+    },
+
+    updatedAt: {
+      type: encryptedValue,
+      required: true,
     },
   },
   {
-    timestamps: true,
+    timestamps: false,
     strict: true,
   }
 );
