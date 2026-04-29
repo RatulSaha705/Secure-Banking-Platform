@@ -3,92 +3,84 @@
 /**
  * server/src/models/TwoFactorChallenge.js
  *
- * Login OTP challenge.
+ * Strict encrypted login OTP challenge schema.
  *
- * Password verification creates this document.
- * Final JWT/session is issued only after OTP verification.
+ * Rule:
+ *   Only _id is readable.
  *
- * Plaintext OTP is never stored.
+ * _id stores challengeId so backend can find the document.
+ * userId, otpHash, status, attempts, dates, etc. are encrypted.
  */
 
 const mongoose = require('mongoose');
 
+const encryptedValue = mongoose.Schema.Types.Mixed;
+
 const twoFactorChallengeSchema = new mongoose.Schema(
   {
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-      index: true,
-    },
-
-    challengeId: {
+    _id: {
       type: String,
       required: true,
-      unique: true,
-      index: true,
+    },
+
+    userId: {
+      type: encryptedValue,
+      required: true,
     },
 
     otpHash: {
-      type: String,
+      type: encryptedValue,
       required: true,
-      select: false,
     },
 
     purpose: {
-      type: String,
-      enum: ['LOGIN'],
-      default: 'LOGIN',
+      type: encryptedValue,
       required: true,
     },
 
     status: {
-      type: String,
-      enum: ['PENDING', 'VERIFIED', 'EXPIRED', 'USED', 'CANCELLED'],
-      default: 'PENDING',
+      type: encryptedValue,
       required: true,
-      index: true,
     },
 
     attempts: {
-      type: Number,
-      default: 0,
-      min: 0,
+      type: encryptedValue,
+      required: true,
     },
 
     maxAttempts: {
-      type: Number,
-      default: 5,
-      min: 1,
+      type: encryptedValue,
+      required: true,
     },
 
     expiresAt: {
-      type: Date,
+      type: encryptedValue,
       required: true,
-      index: true,
     },
 
     verifiedAt: {
-      type: Date,
-      default: null,
+      type: encryptedValue,
+      required: true,
     },
 
     usedAt: {
-      type: Date,
-      default: null,
+      type: encryptedValue,
+      required: true,
+    },
+
+    createdAt: {
+      type: encryptedValue,
+      required: true,
+    },
+
+    updatedAt: {
+      type: encryptedValue,
+      required: true,
     },
   },
   {
-    timestamps: true,
+    timestamps: false,
     strict: true,
-  }
-);
-
-twoFactorChallengeSchema.index(
-  { expiresAt: 1 },
-  {
-    expireAfterSeconds: 0,
-    name: 'two_factor_challenge_ttl_idx',
   }
 );
 

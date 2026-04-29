@@ -1,24 +1,29 @@
 'use strict';
 
 /**
- * server/src/scripts/resetOldEncryptionData.js
+ * server/src/scripts/resetStrictEncryptedAuthData.js
  *
  * WARNING:
- * This script deletes old development data that used the old encryption system.
+ * This script deletes old development data that used old/mixed encryption.
+ *
+ * Use this after replacing all strict-encryption files.
  *
  * It clears:
  *   - users
- *   - pending registrations
- *   - refresh sessions
- *   - two-factor challenges
- *   - crypto keys
- *   - future banking feature collections if they exist
+ *   - pendingregistrations
+ *   - twofactorchallenges
+ *   - refreshsessions
+ *   - cryptokeys
+ *   - future feature collections if present
  *
- * It also clears old RSA/ECC private key maps from server/.env.
+ * It also:
+ *   - clears RSA/ECC private-key maps from server/.env
+ *   - removes old plaintext indexes from auth collections
+ *   - recreates current CryptoKey indexes
  *
  * Usage:
  *   cd server
- *   node src/scripts/resetOldEncryptionData.js
+ *   node src/scripts/resetStrictEncryptedAuthData.js
  */
 
 require('dotenv').config();
@@ -26,16 +31,18 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
+
 const { CryptoKey } = require('../security/keys/key.model');
 
 const COLLECTIONS_TO_CLEAR = [
   'users',
   'pendingregistrations',
-  'refreshsessions',
   'twofactorchallenges',
+  'refreshsessions',
   'cryptokeys',
 
   // Future feature collections, cleared only if they already exist.
+  'profiles',
   'accounts',
   'beneficiaries',
   'transactions',
@@ -43,10 +50,11 @@ const COLLECTIONS_TO_CLEAR = [
   'notifications',
 ];
 
-const OLD_KEY_INDEX_NAMES = [
-  'one_active_key_per_algorithm_purpose',
-  'algorithm_purpose_status_idx',
-  'algorithm_purpose_version_idx',
+const COLLECTIONS_TO_DROP_NON_ID_INDEXES = [
+  'users',
+  'pendingregistrations',
+  'twofactorchallenges',
+  'refreshsessions',
 ];
 
 const connectDatabase = async () => {
@@ -60,11 +68,9 @@ const connectDatabase = async () => {
 };
 
 const collectionExists = async (collectionName) => {
-  const result = await mongoose.connection.db
+  return mongoose.connection.db
     .listCollections({ name: collectionName })
     .hasNext();
-
-  return result;
 };
 
 const clearCollectionIfExists = async (collectionName) => {
@@ -82,25 +88,27 @@ const clearCollectionIfExists = async (collectionName) => {
   console.log(`Cleared ${collectionName}: ${result.deletedCount} document(s) deleted`);
 };
 
-const dropIndexIfExists = async (collectionName, indexName) => {
+const dropNonIdIndexesIfCollectionExists = async (collectionName) => {
   const exists = await collectionExists(collectionName);
 
   if (!exists) {
+    console.log(`Skipping index cleanup for missing collection: ${collectionName}`);
     return;
   }
 
   const collection = mongoose.connection.db.collection(collectionName);
   const indexes = await collection.indexes();
 
-  const found = indexes.some((index) => index.name === indexName);
+  for (let i = 0; i < indexes.length; i += 1) {
+    const index = indexes[i];
 
-  if (!found) {
-    console.log(`Old index not found, skipping: ${collectionName}.${indexName}`);
-    return;
+    if (index.name === '_id_') {
+      continue;
+    }
+
+    await collection.dropIndex(index.name);
+    console.log(`Dropped old index: ${collectionName}.${index.name}`);
   }
-
-  await collection.dropIndex(indexName);
-  console.log(`Dropped old index: ${collectionName}.${indexName}`);
 };
 
 const updateEnvValue = (envFilePath, key, value) => {
@@ -127,7 +135,7 @@ const updateEnvValue = (envFilePath, key, value) => {
   process.env[key] = value;
 };
 
-const clearOldPrivateKeyEnvValues = () => {
+const clearPrivateKeyEnvValues = () => {
   const envFilePath = path.resolve(process.cwd(), '.env');
 
   updateEnvValue(envFilePath, 'SECURITY_RSA_PRIVATE_KEYS_B64', '');
@@ -141,36 +149,36 @@ const main = async () => {
   console.log('Connecting to MongoDB...');
   await connectDatabase();
 
-  console.log('\nClearing old data...\n');
+  console.log('\nClearing old documents...\n');
 
-  for (const collectionName of COLLECTIONS_TO_CLEAR) {
-    await clearCollectionIfExists(collectionName);
+  for (let i = 0; i < COLLECTIONS_TO_CLEAR.length; i += 1) {
+    await clearCollectionIfExists(COLLECTIONS_TO_CLEAR[i]);
   }
 
-  console.log('\nDropping old CryptoKey indexes...\n');
+  console.log('\nDropping old plaintext indexes...\n');
 
-  for (const indexName of OLD_KEY_INDEX_NAMES) {
-    await dropIndexIfExists('cryptokeys', indexName);
+  for (let i = 0; i < COLLECTIONS_TO_DROP_NON_ID_INDEXES.length; i += 1) {
+    await dropNonIdIndexesIfCollectionExists(COLLECTIONS_TO_DROP_NON_ID_INDEXES[i]);
   }
 
-  console.log('\nCreating current CryptoKey indexes...\n');
+  console.log('\nRecreating current CryptoKey indexes...\n');
   await CryptoKey.createIndexes();
 
-  console.log('\nClearing old private key environment values...\n');
-  clearOldPrivateKeyEnvValues();
+  console.log('\nClearing old private-key maps...\n');
+  clearPrivateKeyEnvValues();
 
   await mongoose.disconnect();
 
-  console.log('\nOld encryption data reset completed successfully.');
+  console.log('\nStrict encrypted auth reset completed successfully.');
   console.log('\nNext steps:');
   console.log('1. Restart backend server.');
-  console.log('2. Register a new user.');
-  console.log('3. Check cryptokeys collection.');
-  console.log('4. Confirm every key has ownerType USER and ownerUserId.');
+  console.log('2. Register a fresh user.');
+  console.log('3. Verify MongoDB users collection: only _id should be readable.');
+  console.log('4. Promote admin again using promoteUserByUsername.js.');
 };
 
 main().catch(async (error) => {
-  console.error('\nReset failed:');
+  console.error('\nStrict encrypted auth reset failed:');
   console.error(error);
 
   try {

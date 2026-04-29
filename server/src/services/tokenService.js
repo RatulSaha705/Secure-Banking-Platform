@@ -3,19 +3,30 @@
 /**
  * server/src/services/tokenService.js
  *
- * Secure Session Management
- * - Short-lived JWT access token
- * - HTTP-only refresh-token cookie
- * - Refresh session storage in MongoDB
- * - Refresh token rotation
- * - Logout/session invalidation
- * - 5-minute idle timeout
+ * Strict encrypted session management.
+ *
+ * New DB rule:
+ *   Only refreshsessions._id is readable.
+ *   Everything else is encrypted:
+ *     userId, refreshTokenHash, status, dates, IP, userAgent, etc.
+ *
+ * Consequence:
+ *   We cannot query MongoDB by refreshTokenHash anymore.
+ *   We load sessions, decrypt them, then compare the hash in backend memory.
  */
 
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+
 const RefreshSession = require('../models/RefreshSession');
+const User = require('../models/User');
+
 const { hmacSha256Hex, timingSafeEqualHex } = require('../security/hash/hmac');
+
+const {
+  encryptSensitiveFields,
+  decryptSensitiveFields,
+} = require('../security/storage');
 
 const DEFAULT_ACCESS_EXPIRES_IN = '15m';
 const DEFAULT_REFRESH_EXPIRES_IN_DAYS = 7;
@@ -24,7 +35,11 @@ const DEFAULT_IDLE_TIMEOUT_MINUTES = 5;
 
 const getAccessSecret = () => {
   const secret = process.env.JWT_ACCESS_SECRET;
-  if (!secret) throw new Error('JWT_ACCESS_SECRET is not set in environment');
+
+  if (!secret) {
+    throw new Error('JWT_ACCESS_SECRET is not set in environment');
+  }
+
   return secret;
 };
 
@@ -80,25 +95,45 @@ const getIdleTimeoutMs = () => {
   return getIdleTimeoutMinutes() * 60 * 1000;
 };
 
-const buildSessionExpiryDate = () => {
-  return new Date(Date.now() + getRefreshMaxAgeMs());
+const nowIso = () => {
+  return new Date().toISOString();
 };
 
-const buildIdleExpiryDate = () => {
-  return new Date(Date.now() + getIdleTimeoutMs());
+const buildSessionExpiryIso = () => {
+  return new Date(Date.now() + getRefreshMaxAgeMs()).toISOString();
+};
+
+const buildIdleExpiryIso = () => {
+  return new Date(Date.now() + getIdleTimeoutMs()).toISOString();
+};
+
+const isExpired = (isoDateValue) => {
+  if (!isoDateValue) {
+    return true;
+  }
+
+  return new Date(isoDateValue).getTime() <= Date.now();
 };
 
 const getRequestIp = (req) => {
-  if (!req) return null;
+  if (!req) {
+    return null;
+  }
 
   const forwardedFor = req.headers['x-forwarded-for'];
-  if (forwardedFor) return String(forwardedFor).split(',')[0].trim();
+
+  if (forwardedFor) {
+    return String(forwardedFor).split(',')[0].trim();
+  }
 
   return req.ip || req.socket?.remoteAddress || null;
 };
 
 const getRequestUserAgent = (req) => {
-  if (!req) return null;
+  if (!req) {
+    return null;
+  }
+
   return req.get('user-agent') || null;
 };
 
@@ -113,7 +148,11 @@ const hashRefreshToken = (refreshToken) => {
   );
 };
 
-const generateAccessToken = ({ id, role, sessionId }) => {
+const generateAccessToken = ({
+  id,
+  role,
+  sessionId,
+}) => {
   if (!id || !role || !sessionId) {
     throw new Error('id, role, and sessionId are required for access token');
   }
@@ -154,120 +193,246 @@ const setRefreshTokenCookie = (res, refreshToken) => {
 
 const clearRefreshTokenCookie = (res) => {
   res.clearCookie(getRefreshCookieName(), {
-    ...buildCookieOptions(),
-    maxAge: undefined,
+    path: '/api/auth',
   });
-};
-
-const parseCookies = (cookieHeader = '') => {
-  return String(cookieHeader)
-    .split(';')
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .reduce((cookies, part) => {
-      const separatorIndex = part.indexOf('=');
-      if (separatorIndex === -1) return cookies;
-
-      const key = decodeURIComponent(part.slice(0, separatorIndex).trim());
-      const value = decodeURIComponent(part.slice(separatorIndex + 1).trim());
-      cookies[key] = value;
-      return cookies;
-    }, {});
 };
 
 const getRefreshTokenFromRequest = (req) => {
-  if (!req) return null;
-
-  if (req.cookies && req.cookies[getRefreshCookieName()]) {
-    return req.cookies[getRefreshCookieName()];
+  if (!req || !req.cookies) {
+    return null;
   }
 
-  const cookies = parseCookies(req.headers.cookie || '');
-  return cookies[getRefreshCookieName()] || null;
+  return req.cookies[getRefreshCookieName()] || null;
 };
 
-const expireSession = async (session, reason) => {
-  session.status = 'EXPIRED';
-  session.revokedAt = new Date();
-  session.revokedReason = reason;
-  await session.save();
+const buildRefreshSessionContext = ({
+  ownerId,
+  sessionId,
+}) => {
+  return {
+    ownerId: String(ownerId),
+    documentId: String(sessionId),
+    collectionName: 'refreshsessions',
+  };
 };
 
-const assertActiveSession = async (session) => {
-  if (!session) {
-    const error = new Error('Session not found');
-    error.statusCode = 401;
-    throw error;
+const decryptRefreshSession = async (encryptedSession) => {
+  if (!encryptedSession) {
+    return null;
   }
 
-  if (session.status !== 'ACTIVE') {
-    const error = new Error('Session is no longer active');
-    error.statusCode = 401;
-    throw error;
-  }
+  const sessionId = String(encryptedSession._id);
 
-  if (session.expiresAt.getTime() <= Date.now()) {
-    await expireSession(session, 'SESSION_EXPIRED');
+  const decrypted = await decryptSensitiveFields(
+    'REFRESH_SESSION',
+    encryptedSession,
+    {
+      documentId: sessionId,
+      collectionName: 'refreshsessions',
+    }
+  );
 
-    const error = new Error('Session expired');
-    error.statusCode = 401;
-    throw error;
-  }
+  decrypted._id = sessionId;
+  decrypted.id = sessionId;
 
-  if (session.idleExpiresAt && session.idleExpiresAt.getTime() <= Date.now()) {
-    await expireSession(session, 'IDLE_TIMEOUT');
-
-    const error = new Error('Session ended because of 5 minutes inactivity');
-    error.statusCode = 401;
-    throw error;
-  }
+  return decrypted;
 };
 
-const createLoginSession = async ({ user, req }) => {
+const encryptRefreshSession = async (plainSession) => {
+  const sessionId = String(plainSession._id);
+  const ownerId = String(plainSession.userId);
+
+  return encryptSensitiveFields(
+    'REFRESH_SESSION',
+    plainSession,
+    buildRefreshSessionContext({
+      ownerId,
+      sessionId,
+    })
+  );
+};
+
+const saveRefreshSessionPlain = async (plainSession) => {
+  const encryptedSession = await encryptRefreshSession({
+    ...plainSession,
+    updatedAt: nowIso(),
+  });
+
+  await RefreshSession.replaceOne(
+    {
+      _id: String(encryptedSession._id),
+    },
+    encryptedSession,
+    {
+      upsert: false,
+    }
+  );
+};
+
+const decryptUser = async (encryptedUser) => {
+  if (!encryptedUser) {
+    return null;
+  }
+
+  const userId = String(encryptedUser._id);
+
+  const decrypted = await decryptSensitiveFields(
+    'USER',
+    encryptedUser,
+    {
+      ownerId: userId,
+      documentId: userId,
+      collectionName: 'users',
+    }
+  );
+
+  decrypted._id = userId;
+  decrypted.id = userId;
+
+  return decrypted;
+};
+
+const getDecryptedUserById = async (userId) => {
+  const encryptedUser = await User.findById(String(userId)).lean();
+
+  if (!encryptedUser) {
+    return null;
+  }
+
+  return decryptUser(encryptedUser);
+};
+
+const assertActiveSession = async (plainSession) => {
+  if (!plainSession) {
+    const error = new Error('Refresh session not found');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  if (plainSession.status !== 'ACTIVE') {
+    const error = new Error('Refresh session is no longer active');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  if (isExpired(plainSession.expiresAt)) {
+    plainSession.status = 'EXPIRED';
+    plainSession.revokedAt = nowIso();
+    plainSession.revokedReason = 'SESSION_EXPIRED';
+
+    await saveRefreshSessionPlain(plainSession);
+
+    const error = new Error('Refresh session expired');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  if (plainSession.idleExpiresAt && isExpired(plainSession.idleExpiresAt)) {
+    plainSession.status = 'EXPIRED';
+    plainSession.revokedAt = nowIso();
+    plainSession.revokedReason = 'IDLE_TIMEOUT';
+
+    await saveRefreshSessionPlain(plainSession);
+
+    const error = new Error('Session ended because of inactivity');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  return true;
+};
+
+const createLoginSession = async ({
+  user,
+  req,
+}) => {
   const refreshToken = generateRefreshToken();
   const refreshTokenHash = hashRefreshToken(refreshToken);
 
-  const now = new Date();
+  const sessionId = crypto.randomBytes(12).toString('hex');
+  const timestamp = nowIso();
 
-  const session = await RefreshSession.create({
-    userId: user._id,
+  const plainSession = {
+    _id: sessionId,
+    userId: String(user._id || user.id),
     refreshTokenHash,
     status: 'ACTIVE',
+
     ipAddress: getRequestIp(req),
     userAgent: getRequestUserAgent(req),
-    lastUsedAt: now,
-    lastActivityAt: now,
-    idleExpiresAt: buildIdleExpiryDate(),
-    expiresAt: buildSessionExpiryDate(),
-  });
+
+    lastUsedAt: timestamp,
+    lastActivityAt: timestamp,
+    idleExpiresAt: buildIdleExpiryIso(),
+    expiresAt: buildSessionExpiryIso(),
+
+    revokedAt: null,
+    revokedReason: null,
+    replacedBySessionId: null,
+
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+
+  const encryptedSession = await encryptRefreshSession(plainSession);
+  await RefreshSession.create(encryptedSession);
 
   const accessToken = generateAccessToken({
-    id: user._id.toString(),
+    id: plainSession.userId,
     role: user.role,
-    sessionId: session._id.toString(),
+    sessionId,
   });
 
   return {
     accessToken,
     refreshToken,
-    sessionId: session._id.toString(),
-    sessionExpiresAt: session.expiresAt,
-    idleExpiresAt: session.idleExpiresAt,
+    sessionId,
+    sessionExpiresAt: plainSession.expiresAt,
+    idleExpiresAt: plainSession.idleExpiresAt,
   };
 };
 
 const findSessionByRefreshToken = async (refreshToken) => {
-  if (!refreshToken) return null;
+  if (!refreshToken) {
+    return null;
+  }
 
-  const refreshTokenHash = hashRefreshToken(refreshToken);
+  const providedHash = hashRefreshToken(refreshToken);
+  const encryptedSessions = await RefreshSession.find({}).lean();
 
-  return RefreshSession.findOne({ refreshTokenHash }).select(
-    '+refreshTokenHash'
-  );
+  for (let i = 0; i < encryptedSessions.length; i += 1) {
+    const encryptedSession = encryptedSessions[i];
+    const plainSession = await decryptRefreshSession(encryptedSession);
+
+    if (!plainSession || !plainSession.refreshTokenHash) {
+      continue;
+    }
+
+    if (timingSafeEqualHex(providedHash, plainSession.refreshTokenHash)) {
+      return {
+        encryptedSession,
+        plainSession,
+      };
+    }
+  }
+
+  return null;
 };
 
-const rotateRefreshSession = async ({ refreshToken, req }) => {
-  const currentSession = await findSessionByRefreshToken(refreshToken);
+const rotateRefreshSession = async ({
+  refreshToken,
+  req,
+}) => {
+  const match = await findSessionByRefreshToken(refreshToken);
+
+  if (!match) {
+    const error = new Error('Refresh session not found');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const currentSession = match.plainSession;
+
   await assertActiveSession(currentSession);
 
   const providedHash = hashRefreshToken(refreshToken);
@@ -278,14 +443,14 @@ const rotateRefreshSession = async ({ refreshToken, req }) => {
     throw error;
   }
 
-  const User = require('../models/User');
-  const user = await User.findById(currentSession.userId);
+  const user = await getDecryptedUserById(currentSession.userId);
 
-  if (!user || !user.isActive) {
+  if (!user || user.isActive !== true) {
     currentSession.status = 'REVOKED';
-    currentSession.revokedAt = new Date();
+    currentSession.revokedAt = nowIso();
     currentSession.revokedReason = 'USER_INACTIVE_OR_NOT_FOUND';
-    await currentSession.save();
+
+    await saveRefreshSessionPlain(currentSession);
 
     const error = new Error('User is not active');
     error.statusCode = 401;
@@ -293,97 +458,134 @@ const rotateRefreshSession = async ({ refreshToken, req }) => {
   }
 
   const nextRefreshToken = generateRefreshToken();
-  const now = new Date();
+  const timestamp = nowIso();
+  const nextSessionId = crypto.randomBytes(12).toString('hex');
 
-  const nextSession = await RefreshSession.create({
-    userId: user._id,
+  const nextSession = {
+    _id: nextSessionId,
+    userId: String(user._id),
     refreshTokenHash: hashRefreshToken(nextRefreshToken),
     status: 'ACTIVE',
+
     ipAddress: getRequestIp(req),
     userAgent: getRequestUserAgent(req),
-    lastUsedAt: now,
-    lastActivityAt: now,
-    idleExpiresAt: buildIdleExpiryDate(),
-    expiresAt: buildSessionExpiryDate(),
-  });
+
+    lastUsedAt: timestamp,
+    lastActivityAt: timestamp,
+    idleExpiresAt: buildIdleExpiryIso(),
+    expiresAt: buildSessionExpiryIso(),
+
+    revokedAt: null,
+    revokedReason: null,
+    replacedBySessionId: null,
+
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+
+  const encryptedNextSession = await encryptRefreshSession(nextSession);
+  await RefreshSession.create(encryptedNextSession);
 
   currentSession.status = 'REVOKED';
-  currentSession.revokedAt = now;
+  currentSession.revokedAt = timestamp;
   currentSession.revokedReason = 'ROTATED';
-  currentSession.replacedBySessionId = nextSession._id;
-  currentSession.lastUsedAt = now;
-  await currentSession.save();
+  currentSession.replacedBySessionId = nextSessionId;
+  currentSession.lastUsedAt = timestamp;
+
+  await saveRefreshSessionPlain(currentSession);
 
   const accessToken = generateAccessToken({
-    id: user._id.toString(),
+    id: user._id,
     role: user.role,
-    sessionId: nextSession._id.toString(),
+    sessionId: nextSessionId,
   });
 
   return {
     accessToken,
     refreshToken: nextRefreshToken,
-    sessionId: nextSession._id.toString(),
+    sessionId: nextSessionId,
     sessionExpiresAt: nextSession.expiresAt,
     idleExpiresAt: nextSession.idleExpiresAt,
     user: {
-      id: user._id.toString(),
+      id: user._id,
       role: user.role,
     },
   };
 };
 
 const touchSessionActivity = async ({ sessionId }) => {
-  if (!sessionId) {
-    const error = new Error('Session id is required');
-    error.statusCode = 400;
+  const encryptedSession = await RefreshSession.findById(String(sessionId)).lean();
+
+  if (!encryptedSession) {
+    const error = new Error('Session not found');
+    error.statusCode = 401;
     throw error;
   }
 
-  const session = await RefreshSession.findById(sessionId);
+  const session = await decryptRefreshSession(encryptedSession);
 
   await assertActiveSession(session);
 
-  const now = new Date();
+  session.lastActivityAt = nowIso();
+  session.idleExpiresAt = buildIdleExpiryIso();
 
-  session.lastActivityAt = now;
-  session.idleExpiresAt = buildIdleExpiryDate();
-  await session.save();
+  await saveRefreshSessionPlain(session);
 
   return {
-    sessionId: session._id.toString(),
+    sessionId: String(session._id),
     lastActivityAt: session.lastActivityAt,
     idleExpiresAt: session.idleExpiresAt,
   };
 };
 
-const revokeRefreshSession = async ({ refreshToken, reason = 'LOGOUT' }) => {
-  const session = await findSessionByRefreshToken(refreshToken);
+const revokeRefreshSession = async ({
+  refreshToken,
+  reason = 'LOGOUT',
+}) => {
+  const match = await findSessionByRefreshToken(refreshToken);
 
-  if (!session) return false;
+  if (!match) {
+    return false;
+  }
+
+  const session = match.plainSession;
 
   if (session.status === 'ACTIVE') {
     session.status = 'REVOKED';
-    session.revokedAt = new Date();
+    session.revokedAt = nowIso();
     session.revokedReason = reason;
-    await session.save();
+
+    await saveRefreshSessionPlain(session);
   }
 
   return true;
 };
 
-const revokeSessionById = async ({ sessionId, reason = 'LOGOUT' }) => {
-  if (!sessionId) return false;
+const revokeSessionById = async ({
+  sessionId,
+  reason = 'LOGOUT',
+}) => {
+  if (!sessionId) {
+    return false;
+  }
 
-  const session = await RefreshSession.findById(sessionId);
+  const encryptedSession = await RefreshSession.findById(String(sessionId)).lean();
 
-  if (!session) return false;
+  if (!encryptedSession) {
+    return false;
+  }
+
+  const session = await decryptRefreshSession(encryptedSession);
 
   if (session.status === 'ACTIVE') {
-    session.status = 'REVOKED';
-    session.revokedAt = new Date();
+    session.status = reason === 'SESSION_EXPIRED' || reason === 'IDLE_TIMEOUT'
+      ? 'EXPIRED'
+      : 'REVOKED';
+
+    session.revokedAt = nowIso();
     session.revokedReason = reason;
-    await session.save();
+
+    await saveRefreshSessionPlain(session);
   }
 
   return true;
@@ -410,4 +612,8 @@ module.exports = {
 
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
+
+  hashRefreshToken,
+  decryptRefreshSession,
+  getDecryptedUserById,
 };

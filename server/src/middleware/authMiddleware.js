@@ -3,28 +3,27 @@
 /**
  * server/src/middleware/authMiddleware.js
  *
- * Authentication + RBAC foundation.
+ * Strict encrypted Authentication + RBAC middleware.
  *
- * Authentication:
- *   - reads Bearer access token
- *   - verifies JWT
- *   - verifies refresh session is still ACTIVE
- *   - verifies session has not expired
- *   - verifies idle timeout
- *   - verifies the user still exists and is active
- *   - attaches fresh user role from MongoDB to req.user
- *
- * RBAC helpers:
- *   - requireRole(...roles)
- *   - requireAdmin
- *   - requireOwnerOrAdmin(options)
- *   - requireSelfOrAdmin(options)
+ * New DB rule:
+ *   Only _id is readable.
+ *   Session fields and user fields are decrypted before checking.
  */
 
 const mongoose = require('mongoose');
+
 const RefreshSession = require('../models/RefreshSession');
 const User = require('../models/User');
-const { verifyAccessToken } = require('../services/tokenService');
+
+const {
+  verifyAccessToken,
+  revokeSessionById,
+} = require('../services/tokenService');
+
+const {
+  decryptSensitiveFields,
+} = require('../security/storage');
+
 const { ROLES, normalizeRole } = require('../constants/roles');
 
 const getBearerToken = (req) => {
@@ -52,17 +51,6 @@ const sendForbidden = (res, message) => {
   });
 };
 
-const expireSession = async (session, reason) => {
-  if (!session) {
-    return;
-  }
-
-  session.status = 'EXPIRED';
-  session.revokedAt = new Date();
-  session.revokedReason = reason;
-  await session.save();
-};
-
 const sameId = (firstId, secondId) => {
   if (!firstId || !secondId) {
     return false;
@@ -73,6 +61,59 @@ const sameId = (firstId, secondId) => {
 
 const isAdminRole = (role) => {
   return normalizeRole(role) === ROLES.ADMIN;
+};
+
+const isExpired = (isoDateValue) => {
+  if (!isoDateValue) {
+    return true;
+  }
+
+  return new Date(isoDateValue).getTime() <= Date.now();
+};
+
+const decryptSessionDocument = async (encryptedSession) => {
+  if (!encryptedSession) {
+    return null;
+  }
+
+  const sessionId = String(encryptedSession._id);
+
+  const decrypted = await decryptSensitiveFields(
+    'REFRESH_SESSION',
+    encryptedSession,
+    {
+      documentId: sessionId,
+      collectionName: 'refreshsessions',
+    }
+  );
+
+  decrypted._id = sessionId;
+  decrypted.id = sessionId;
+
+  return decrypted;
+};
+
+const decryptUserDocument = async (encryptedUser) => {
+  if (!encryptedUser) {
+    return null;
+  }
+
+  const userId = String(encryptedUser._id);
+
+  const decrypted = await decryptSensitiveFields(
+    'USER',
+    encryptedUser,
+    {
+      ownerId: userId,
+      documentId: userId,
+      collectionName: 'users',
+    }
+  );
+
+  decrypted._id = userId;
+  decrypted.id = userId;
+
+  return decrypted;
 };
 
 const requireAuth = async (req, res, next) => {
@@ -93,47 +134,71 @@ const requireAuth = async (req, res, next) => {
       return sendUnauthorized(res, 'Invalid user in access token');
     }
 
-    if (!mongoose.Types.ObjectId.isValid(decoded.sid)) {
-      return sendUnauthorized(res, 'Invalid session in access token');
+    const encryptedSession = await RefreshSession.findById(String(decoded.sid)).lean();
+
+    if (!encryptedSession) {
+      return sendUnauthorized(res, 'Session is no longer active');
     }
 
-    const session = await RefreshSession.findById(decoded.sid);
+    const session = await decryptSessionDocument(encryptedSession);
 
     if (!session || session.status !== 'ACTIVE') {
       return sendUnauthorized(res, 'Session is no longer active');
     }
 
     if (!sameId(session.userId, decoded.id)) {
-      await expireSession(session, 'SESSION_USER_MISMATCH');
+      await revokeSessionById({
+        sessionId: decoded.sid,
+        reason: 'SESSION_USER_MISMATCH',
+      });
+
       return sendUnauthorized(res, 'Session does not match authenticated user');
     }
 
-    if (session.expiresAt.getTime() <= Date.now()) {
-      await expireSession(session, 'SESSION_EXPIRED');
+    if (isExpired(session.expiresAt)) {
+      await revokeSessionById({
+        sessionId: decoded.sid,
+        reason: 'SESSION_EXPIRED',
+      });
+
       return sendUnauthorized(res, 'Session expired');
     }
 
-    if (session.idleExpiresAt && session.idleExpiresAt.getTime() <= Date.now()) {
-      await expireSession(session, 'IDLE_TIMEOUT');
+    if (session.idleExpiresAt && isExpired(session.idleExpiresAt)) {
+      await revokeSessionById({
+        sessionId: decoded.sid,
+        reason: 'IDLE_TIMEOUT',
+      });
+
       return sendUnauthorized(res, 'Session ended because of inactivity');
     }
 
-    const user = await User.findById(decoded.id).select('_id role isActive');
+    const encryptedUser = await User.findById(String(decoded.id)).lean();
 
-    if (!user) {
-      await expireSession(session, 'USER_NOT_FOUND');
+    if (!encryptedUser) {
+      await revokeSessionById({
+        sessionId: decoded.sid,
+        reason: 'USER_NOT_FOUND',
+      });
+
       return sendUnauthorized(res, 'User not found');
     }
 
-    if (!user.isActive) {
-      await expireSession(session, 'USER_INACTIVE');
+    const user = await decryptUserDocument(encryptedUser);
+
+    if (user.isActive !== true) {
+      await revokeSessionById({
+        sessionId: decoded.sid,
+        reason: 'USER_INACTIVE',
+      });
+
       return sendUnauthorized(res, 'User account is disabled');
     }
 
     req.user = {
-      id: user._id.toString(),
+      id: String(user._id),
       role: normalizeRole(user.role),
-      sessionId: session._id.toString(),
+      sessionId: String(session._id),
       isActive: user.isActive,
     };
 
@@ -194,17 +259,26 @@ const resolveTargetUserId = (req, options = {}) => {
 
   if (options.paramName && req.params) {
     const value = req.params[options.paramName];
-    if (value) return value;
+
+    if (value) {
+      return value;
+    }
   }
 
   if (options.bodyName && req.body) {
     const value = readNestedValue(req.body, options.bodyName);
-    if (value) return value;
+
+    if (value) {
+      return value;
+    }
   }
 
   if (options.queryName && req.query) {
     const value = readNestedValue(req.query, options.queryName);
-    if (value) return value;
+
+    if (value) {
+      return value;
+    }
   }
 
   if (req.params) {
@@ -252,4 +326,7 @@ module.exports = {
   requireAdmin,
   requireOwnerOrAdmin,
   requireSelfOrAdmin,
+
+  decryptSessionDocument,
+  decryptUserDocument,
 };

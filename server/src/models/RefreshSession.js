@@ -3,96 +3,94 @@
 /**
  * server/src/models/RefreshSession.js
  *
- * Secure session document for refresh-token based login sessions.
- * The raw refresh token is never stored. Only a custom HMAC hash is stored.
+ * Strict encrypted refresh session schema.
+ *
+ * Rule:
+ *   Only _id is readable.
+ *
+ * The session _id is allowed to stay readable because the backend needs it
+ * to find the session document.
  */
 
 const mongoose = require('mongoose');
 
+const encryptedValue = mongoose.Schema.Types.Mixed;
+
 const refreshSessionSchema = new mongoose.Schema(
   {
     userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      type: encryptedValue,
       required: true,
-      index: true,
     },
 
     refreshTokenHash: {
-      type: String,
+      type: encryptedValue,
       required: true,
-      unique: true,
-      select: false,
     },
 
     status: {
-      type: String,
-      enum: ['ACTIVE', 'REVOKED', 'EXPIRED'],
-      default: 'ACTIVE',
+      type: encryptedValue,
       required: true,
-      index: true,
     },
 
     ipAddress: {
-      type: String,
-      default: null,
+      type: encryptedValue,
+      required: true,
     },
 
     userAgent: {
-      type: String,
-      default: null,
+      type: encryptedValue,
+      required: true,
     },
 
     lastUsedAt: {
-      type: Date,
-      default: null,
+      type: encryptedValue,
+      required: true,
     },
 
     lastActivityAt: {
-      type: Date,
-      default: null,
-      index: true,
+      type: encryptedValue,
+      required: true,
     },
 
     idleExpiresAt: {
-      type: Date,
-      default: null,
-      index: true,
+      type: encryptedValue,
+      required: true,
     },
 
     expiresAt: {
-      type: Date,
+      type: encryptedValue,
       required: true,
-      index: true,
     },
 
     revokedAt: {
-      type: Date,
-      default: null,
+      type: encryptedValue,
+      required: true,
     },
 
     revokedReason: {
-      type: String,
-      default: null,
+      type: encryptedValue,
+      required: true,
     },
 
     replacedBySessionId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'RefreshSession',
-      default: null,
+      type: encryptedValue,
+      required: true,
+    },
+
+    createdAt: {
+      type: encryptedValue,
+      required: true,
+    },
+
+    updatedAt: {
+      type: encryptedValue,
+      required: true,
     },
   },
   {
-    timestamps: true,
+    timestamps: false,
     strict: true,
-  }
-);
-
-refreshSessionSchema.index(
-  { expiresAt: 1 },
-  {
-    expireAfterSeconds: 0,
-    name: 'refresh_session_ttl_idx',
   }
 );
 

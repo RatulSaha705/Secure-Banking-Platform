@@ -1,18 +1,22 @@
 'use strict';
 
 /**
- * server/src/scripts/promoteUserToAdmin.js
+ * server/src/scripts/promoteUserByUsername.js
  *
  * Strict encrypted version.
  *
- * Finds a user by MongoDB _id, decrypts role, updates role,
- * re-encrypts the user document, and revokes active sessions.
+ * Since usernameLookupHash and role are encrypted, this script:
+ *   1. Loads all users.
+ *   2. Decrypts each user.
+ *   3. Finds the matching usernameLookupHash in memory.
+ *   4. Changes role.
+ *   5. Re-encrypts the full user document.
+ *   6. Revokes that user's active refresh sessions.
  *
  * Usage:
  *   cd server
- *   node src/scripts/promoteUserToAdmin.js <userId>
- *   node src/scripts/promoteUserToAdmin.js <userId> admin
- *   node src/scripts/promoteUserToAdmin.js <userId> user
+ *   node src/scripts/promoteUserByUsername.js ayosh admin
+ *   node src/scripts/promoteUserByUsername.js ayosh user
  */
 
 require('dotenv').config();
@@ -22,6 +26,7 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const RefreshSession = require('../models/RefreshSession');
 
+const { computeUsernameLookupHash } = require('../services/lookupHashService');
 const { assertValidRole } = require('../constants/roles');
 
 const {
@@ -77,6 +82,25 @@ const encryptUserDocument = async (plainUser) => {
       collectionName: 'users',
     }
   );
+};
+
+const findUserByUsername = async (username) => {
+  const targetUsernameLookupHash = computeUsernameLookupHash(username);
+  const encryptedUsers = await User.find({}).lean();
+
+  for (let i = 0; i < encryptedUsers.length; i += 1) {
+    const encryptedUser = encryptedUsers[i];
+    const decryptedUser = await decryptUserDocument(encryptedUser);
+
+    if (decryptedUser.usernameLookupHash === targetUsernameLookupHash) {
+      return {
+        encryptedUser,
+        decryptedUser,
+      };
+    }
+  }
+
+  return null;
 };
 
 const decryptRefreshSession = async (encryptedSession) => {
@@ -150,26 +174,26 @@ const revokeUserActiveSessions = async (userId) => {
 };
 
 const main = async () => {
-  const userId = process.argv[2];
+  const username = process.argv[2];
   const requestedRole = process.argv[3] || 'admin';
   const role = assertValidRole(requestedRole);
 
-  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+  if (!username) {
     throw new Error(
-      'Please provide a valid userId. Example: node src/scripts/promoteUserToAdmin.js 69f0... admin'
+      'Please provide username. Example: node src/scripts/promoteUserByUsername.js ayosh admin'
     );
   }
 
   console.log('Connecting to MongoDB...');
   await connectDatabase();
 
-  const encryptedUser = await User.findById(userId).lean();
+  const match = await findUserByUsername(username);
 
-  if (!encryptedUser) {
-    throw new Error(`User not found: ${userId}`);
+  if (!match) {
+    throw new Error(`No user found with username: ${username}`);
   }
 
-  const user = await decryptUserDocument(encryptedUser);
+  const user = match.decryptedUser;
   const oldRole = user.role;
 
   user.role = role;
@@ -179,14 +203,15 @@ const main = async () => {
 
   await User.replaceOne(
     {
-      _id: encryptedUser._id,
+      _id: match.encryptedUser._id,
     },
     encryptedUpdatedUser
   );
 
   const revokedCount = await revokeUserActiveSessions(user._id);
 
-  console.log('\nUser role updated successfully.');
+  console.log('\nUser found and role updated successfully.');
+  console.log(`Username: ${username}`);
   console.log(`User ID: ${user._id}`);
   console.log(`Old role: ${oldRole}`);
   console.log(`New role: ${role}`);
@@ -197,7 +222,7 @@ const main = async () => {
 };
 
 main().catch(async (error) => {
-  console.error('\nRole update failed:');
+  console.error('\nUser promotion failed:');
   console.error(error.message);
 
   try {
