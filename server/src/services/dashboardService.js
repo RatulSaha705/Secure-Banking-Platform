@@ -29,6 +29,8 @@ const User    = require('../models/User');
 const Profile = require('../models/Profile');
 
 const { getMyProfile } = require('./profileService');
+const { getAccountBalance } = require('./accountService');
+const { getMyTransactionHistory } = require('./transferService');
 
 const {
   decryptSensitiveFields,
@@ -70,42 +72,32 @@ const getProfileSummary = async (userId) => {
   };
 };
 
-// ── Account summary (stub — replace when Account module is built) ─────────────
+// ── Account summary (live — Feature 8) ──────────────────────────────────────
 
-const getAccountSummary = async (_userId) => {
-  /**
-   * TODO — Feature 8: Account Details
-   * Replace this stub with a real call such as:
-   *   const account = await accountService.getMyAccount(_userId);
-   *   return { available: true, ...account };
-   */
+const getAccountSummary = async (userId) => {
+  const balance = await getAccountBalance(userId);
+
   return {
-    available:     false,
-    reason:        'Account module not yet implemented',
-    totalBalance:  0,
-    availableBalance: 0,
-    pendingAmount: 0,
-    accountNumber: null,
-    accountType:   null,
-    accountStatus: null,
-    branchName:    null,
+    available:        true,
+    totalBalance:     balance.totalBalance,
+    availableBalance: balance.availableBalance,
+    pendingAmount:    balance.pendingAmount,
+    accountNumber:    balance.accountNumber,
+    accountType:      balance.accountType,
+    accountStatus:    balance.accountStatus,
+    branchName:       balance.branchName,
+    asOf:             balance.asOf,
   };
 };
 
-// ── Recent transactions (stub — replace when Transaction module is built) ──────
+// ── Recent transactions (live — Feature 10) ────────────────────────────────
 
-const getRecentTransactions = async (_userId) => {
-  /**
-   * TODO — Feature 9: Money Transfer & Transaction History
-   * Replace this stub with a real call such as:
-   *   const txns = await transactionService.getRecentTransactions(_userId, { limit: 5 });
-   *   return { available: true, transactions: txns };
-   */
+const getRecentTransactions = async (userId) => {
+  const result = await getMyTransactionHistory(userId, 1, 5);
   return {
-    available:    false,
-    reason:       'Transaction module not yet implemented',
-    transactions: [],
-    totalCount:   0,
+    available:    true,
+    transactions: result.transactions,
+    totalCount:   result.totalCount,
   };
 };
 

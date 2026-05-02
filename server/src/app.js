@@ -19,6 +19,12 @@
  *   PUT  /api/profile/me             – Feature 6: Update profile
  *   GET  /api/dashboard/summary      – Feature 7: User dashboard
  *   GET  /api/dashboard/admin/summary – Feature 7: Admin dashboard
+ *   GET  /api/account/balance        – Feature 8: View account balance
+ *   GET  /api/account/me             – Feature 8: Full account details
+ *   GET  /api/account/admin/:userId  – Feature 8: Admin view any account
+ *   POST /api/transfer/initiate      – Feature 10: Initiate money transfer
+ *   GET  /api/transfer/history       – Feature 10: Transaction history
+ *   GET  /api/transfer/history/:id   – Feature 10: Single transaction
  *   GET  /health                     – Liveness probe
  */
 
@@ -33,6 +39,8 @@ const connectDB         = require('./config/db');
 const authRoutes        = require('./routes/authRoutes');
 const profileRoutes     = require('./routes/profileRoutes');
 const dashboardRoutes   = require('./routes/dashboardRoutes');
+const accountRoutes     = require('./routes/accountRoutes');
+const transferRoutes    = require('./routes/transferRoutes');
 const rateLimiter       = require('./middleware/rateLimiter');
 const logger            = require('./utils/logger');
 const { notFoundHandler, globalErrorHandler } = require('./middleware/errorMiddleware');
@@ -72,6 +80,8 @@ app.use('/api/auth',      authRoutes);
 app.use('/api/keys',      keyRoutes);
 app.use('/api/profile',   profileRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/account',   accountRoutes);
+app.use('/api/transfer',  transferRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {

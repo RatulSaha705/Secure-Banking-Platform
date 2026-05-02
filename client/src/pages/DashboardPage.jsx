@@ -190,8 +190,8 @@ const FEATURE_MODULES = [
   {
     title:       'Account Balance',
     description: 'Display current and available balance securely.',
-    badge:       'Planned',
-    path:        null,
+    badge:       'Live',
+    path:        '/account-balance',
   },
   {
     title:       'Beneficiary Management',
@@ -202,14 +202,14 @@ const FEATURE_MODULES = [
   {
     title:       'Money Transfer',
     description: 'Transfer money with secure validation.',
-    badge:       'Planned',
-    path:        null,
+    badge:       'Live',
+    path:        '/transfer',
   },
   {
     title:       'Transaction History',
     description: 'Check previous transfers and account activity.',
-    badge:       'Planned',
-    path:        null,
+    badge:       'Live',
+    path:        '/transfer',
   },
   {
     title:       'Support Ticket System',
@@ -284,13 +284,17 @@ const DashboardPage = () => {
   /* ── Live values from backend (with safe fallbacks) ─────────────────────── */
   const profile      = data?.profile;
   const account      = data?.account;
+  const transactions = data?.transactions;
+  const recentTxns   = transactions?.available ? (transactions.transactions ?? []) : [];
   const notifications = data?.notifications;
   const tickets      = data?.tickets;
   const quickActions = (data?.quickActions ?? []).map((qa) => ({
     title:       qa.label,
     description: qa.description,
     icon:        ICON_MAP[qa.id] ?? '⚡',
-    path:        qa.available ? qa.path : null,
+    path:        qa.id === 'transfer' ? '/transfer'
+               : qa.id === 'history'  ? '/transfer'
+               : qa.available ? qa.path : null,
   }));
 
   /* Admin values */
@@ -305,19 +309,19 @@ const DashboardPage = () => {
     {
       label:      'Total Balance',
       value:      account?.available ? formatCurrency(account.totalBalance)    : 'BDT 0',
-      subtext:    account?.available ? null : 'Available after Account module',
+      subtext:    account?.available ? `As of ${account.asOf ? new Date(account.asOf).toLocaleTimeString('en-BD') : '—'}` : 'Account module loading…',
       colorClass: 'from-blue-700 to-blue-900',
     },
     {
       label:      'Available Balance',
       value:      account?.available ? formatCurrency(account.availableBalance) : 'BDT 0',
-      subtext:    account?.available ? null : 'Available after Account module',
+      subtext:    account?.available ? 'Ready to use immediately' : 'Account module loading…',
       colorClass: 'from-emerald-600 to-emerald-800',
     },
     {
       label:      'Pending Transfers',
-      value:      account?.available ? account.pendingAmount ?? 0 : '0',
-      subtext:    account?.available ? null : 'Available after Transfer module',
+      value:      account?.available ? formatCurrency(account.pendingAmount ?? 0) : 'BDT 0',
+      subtext:    account?.available ? 'Transfers being processed' : 'Available after Transfer module',
       colorClass: 'from-amber-500 to-orange-600',
     },
   ];
@@ -346,7 +350,7 @@ const DashboardPage = () => {
                 <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
                   {isAdmin
                     ? 'You are logged in as an administrator. Manage users, support tickets, and system alerts from your dashboard.'
-                    : 'Your secure banking dashboard — profile management is live. Account balance, transfers, and more features are coming soon.'}
+                    : 'Your secure banking dashboard — profile management and account balance are live. Transfers and more features are coming soon.'}
                 </p>
 
                 {/* Balance cards */}
@@ -355,6 +359,18 @@ const DashboardPage = () => {
                     <BalanceCard key={card.label} {...card} />
                   ))}
                 </div>
+
+                {/* View Balance link */}
+                {!isAdmin && (
+                  <div className="mt-5">
+                    <Link
+                      to="/account-balance"
+                      className="inline-flex items-center gap-2 rounded-2xl bg-white/20 px-5 py-2.5 text-sm font-bold text-white ring-1 ring-white/30 transition hover:bg-white/30"
+                    >
+                      💰 View Full Balance
+                    </Link>
+                  </div>
+                )}
               </div>
 
               {/* Right — profile card */}
@@ -384,14 +400,18 @@ const DashboardPage = () => {
                   <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/10">
                     <p className="text-xs uppercase tracking-wide text-slate-300">Account Type</p>
                     <p className="mt-2 font-semibold text-white">
-                      {account?.available ? account.accountType : 'Primary Savings'}
+                      {account?.available ? account.accountType : 'Savings'}
                     </p>
                   </div>
 
                   <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/10">
                     <p className="text-xs uppercase tracking-wide text-slate-300">Account Number</p>
                     <p className="mt-2 font-mono font-semibold text-white">
-                      {account?.available ? account.accountNumber : '•••• •••• •••• ——'}
+                      {account?.available
+                        ? account.accountNumber
+                            ?.replace(/\S{4}(?=\S)/g, '•••• ')
+                            .slice(0, -4) + (account.accountNumber?.slice(-4) ?? '')
+                        : '•••• •••• •••• ——'}
                     </p>
                   </div>
 
@@ -523,6 +543,58 @@ const DashboardPage = () => {
 
             {/* Right column */}
             <div className="space-y-6">
+
+              {/* ── Recent transactions (live) ────────────────────────── */}
+              {!isAdmin && (
+                <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-500">Recent Activity</p>
+                      <h2 className="mt-1 text-xl font-extrabold text-slate-900">Transactions</h2>
+                    </div>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-xl ring-1 ring-indigo-100">
+                      📄
+                    </div>
+                  </div>
+
+                  <div className="mt-5 space-y-2">
+                    {recentTxns.length === 0 ? (
+                      <p className="py-4 text-center text-sm text-slate-400">
+                        No transactions yet. <Link to="/transfer" className="font-semibold text-blue-600 hover:underline">Make your first transfer →</Link>
+                      </p>
+                    ) : (
+                      recentTxns.slice(0, 5).map((txn) => {
+                        const isDebit = txn.transactionType === 'DEBIT';
+                        return (
+                          <div key={txn.id} className="flex items-center gap-3 rounded-2xl bg-slate-50 px-3 py-2.5">
+                            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${isDebit ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                              {isDebit ? '↑' : '↓'}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-semibold text-slate-800">
+                                {isDebit ? `→ ${txn.toAccount?.replace(/\S{4}(?=\S)/g, '•••• ').slice(0,-4)}${txn.toAccount?.slice(-4) ?? ''}` : `← ${txn.fromAccount?.slice(-4) ?? ''}`}
+                              </p>
+                              <p className="text-[10px] text-slate-400">{txn.reference}</p>
+                            </div>
+                            <span className={`text-sm font-bold ${isDebit ? 'text-red-600' : 'text-emerald-600'}`}>
+                              {isDebit ? '−' : '+'}{formatCurrency(txn.amount)}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="mt-4">
+                    <Link
+                      to="/transfer"
+                      className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700"
+                    >
+                      💸 Transfer Money / View All
+                    </Link>
+                  </div>
+                </div>
+              )}
 
               {/* Support ticket summary */}
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card">
