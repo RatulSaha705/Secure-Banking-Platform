@@ -1,151 +1,338 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../context/AuthContext';
+import {
+  getUserDashboard,
+  getAdminDashboard,
+} from '../services/dashboardService';
 
-const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('en-BD', {
-    style: 'currency',
-    currency: 'BDT',
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Helpers                                                                      */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+const formatCurrency = (amount) =>
+  new Intl.NumberFormat('en-BD', {
+    style:               'currency',
+    currency:            'BDT',
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(amount ?? 0);
+
+const formatDate = (iso) => {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('en-BD', {
+      year: 'numeric', month: 'short', day: '2-digit',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
 };
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Sub-components                                                                */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/* User avatar with initials */
+const Avatar = ({ name }) => {
+  const initials = (name || 'U')
+    .split(' ')
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('');
+
+  return (
+    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-xl font-extrabold text-white shadow-lg ring-2 ring-blue-500/30">
+      {initials}
+    </div>
+  );
+};
+
+/* Balance card */
+const BalanceCard = ({ label, value, subtext, colorClass }) => (
+  <div className={`rounded-2xl bg-gradient-to-br ${colorClass} p-5 shadow-lg`}>
+    <p className="text-sm font-medium text-white/80">{label}</p>
+    <p className="mt-3 text-2xl font-extrabold text-white">{value}</p>
+    {subtext && (
+      <p className="mt-2 text-xs leading-5 text-white/70">{subtext}</p>
+    )}
+  </div>
+);
+
+/* Module card used in the grid */
+const ModuleCard = ({ title, description, badge, path, badgeColor }) => {
+  const badgeClass =
+    badge === 'Live'
+      ? 'bg-emerald-100 text-emerald-700'
+      : 'bg-amber-100 text-amber-700';
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 transition hover:border-blue-200 hover:bg-white">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-bold text-slate-900">{title}</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${badgeClass}`}>
+          {badge}
+        </span>
+      </div>
+
+      <div className="mt-5">
+        {path ? (
+          <Link
+            to={path}
+            className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            Open Module
+          </Link>
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="inline-flex cursor-not-allowed items-center rounded-xl bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-500"
+          >
+            Coming Soon
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* Quick-action card */
+const QuickActionCard = ({ title, description, icon, path }) => {
+  const content = (
+    <>
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-2xl ring-1 ring-blue-100">
+        {icon}
+      </div>
+      <h3 className="mt-5 text-lg font-bold text-slate-900">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
+      <div className="mt-6">
+        {path ? (
+          <span className="inline-flex items-center rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white">
+            Open
+          </span>
+        ) : (
+          <span className="inline-flex items-center rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500">
+            Coming Soon
+          </span>
+        )}
+      </div>
+    </>
+  );
+
+  return path ? (
+    <Link
+      to={path}
+      className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card transition duration-200 hover:-translate-y-1 hover:border-blue-200 hover:shadow-xl"
+    >
+      {content}
+    </Link>
+  ) : (
+    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card">
+      {content}
+    </div>
+  );
+};
+
+/* Admin stat card */
+const AdminStatCard = ({ label, value, icon, available }) => (
+  <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-lg">
+      {icon}
+    </div>
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-0.5 text-xl font-extrabold text-slate-900">
+        {available ? value : '—'}
+      </p>
+    </div>
+  </div>
+);
+
+/* Security checklist item */
+const SecurityItem = ({ text }) => (
+  <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+    <span className="text-sm font-medium text-slate-700">{text}</span>
+  </div>
+);
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Main Dashboard Page                                                           */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+const ICON_MAP = {
+  transfer:      '💸',
+  beneficiaries: '👥',
+  history:       '📄',
+  support:       '🎧',
+  profile:       '👤',
+};
+
+const FEATURE_MODULES = [
+  {
+    title:       'Profile Management',
+    description: 'View and update encrypted personal information.',
+    badge:       'Live',
+    path:        '/profile',
+  },
+  {
+    title:       'Account Details',
+    description: 'View account type, number, and status.',
+    badge:       'Planned',
+    path:        null,
+  },
+  {
+    title:       'Account Balance',
+    description: 'Display current and available balance securely.',
+    badge:       'Planned',
+    path:        null,
+  },
+  {
+    title:       'Beneficiary Management',
+    description: 'Add, edit, and manage beneficiaries.',
+    badge:       'Planned',
+    path:        null,
+  },
+  {
+    title:       'Money Transfer',
+    description: 'Transfer money with secure validation.',
+    badge:       'Planned',
+    path:        null,
+  },
+  {
+    title:       'Transaction History',
+    description: 'Check previous transfers and account activity.',
+    badge:       'Planned',
+    path:        null,
+  },
+  {
+    title:       'Support Ticket System',
+    description: 'Create, edit, and monitor support tickets.',
+    badge:       'Planned',
+    path:        null,
+  },
+  {
+    title:       'Notifications & Alerts',
+    description: 'Receive alerts for login, transfer, and account events.',
+    badge:       'Planned',
+    path:        null,
+  },
+];
+
+const SECURITY_ITEMS = [
+  'Password + OTP two-step authentication',
+  'Dual asymmetric encryption (RSA + ECC)',
+  'HMAC-SHA256 integrity on every field',
+  'HTTP-only refresh session cookie',
+  'Short-lived access token (Bearer)',
+  'Idle timeout protection',
+];
+
+/* ── Loading skeleton ───────────────────────────────────────────────────────── */
+const DashboardSkeleton = () => (
+  <DashboardLayout>
+    <div className="-m-8 min-h-screen bg-slate-100 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-8">
+        <div className="h-64 animate-pulse rounded-3xl bg-slate-300" />
+        <div className="grid gap-4 sm:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-36 animate-pulse rounded-3xl bg-slate-200" />
+          ))}
+        </div>
+      </div>
+    </div>
+  </DashboardLayout>
+);
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 
 const DashboardPage = () => {
   const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
 
-  const quickActions = [
+  const [data,    setData]    = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDashboard = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = isAdmin
+        ? await getAdminDashboard()
+        : await getUserDashboard();
+      setData(res.data?.data ?? null);
+    } catch (err) {
+      toast.error(
+        err.response?.data?.message || 'Failed to load dashboard. Please refresh.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    fetchDashboard();
+  }, [fetchDashboard]);
+
+  if (loading) return <DashboardSkeleton />;
+
+  /* ── Live values from backend (with safe fallbacks) ─────────────────────── */
+  const profile      = data?.profile;
+  const account      = data?.account;
+  const notifications = data?.notifications;
+  const tickets      = data?.tickets;
+  const quickActions = (data?.quickActions ?? []).map((qa) => ({
+    title:       qa.label,
+    description: qa.description,
+    icon:        ICON_MAP[qa.id] ?? '⚡',
+    path:        qa.available ? qa.path : null,
+  }));
+
+  /* Admin values */
+  const userStats    = data?.userStats;
+  const ticketStats  = data?.ticketStats;
+  const alertStats   = data?.alertStats;
+  const adminActions = data?.adminActions ?? [];
+
+  const displayName = profile?.fullName || profile?.username || 'Authenticated User';
+
+  const balanceCards = [
     {
-      title: 'Transfer Money',
-      description: 'Send money securely to your saved beneficiaries.',
-      icon: '💸',
-      path: null,
+      label:      'Total Balance',
+      value:      account?.available ? formatCurrency(account.totalBalance)    : 'BDT 0',
+      subtext:    account?.available ? null : 'Available after Account module',
+      colorClass: 'from-blue-700 to-blue-900',
     },
     {
-      title: 'Add Beneficiary',
-      description: 'Save trusted people and accounts for future transfers.',
-      icon: '👥',
-      path: null,
+      label:      'Available Balance',
+      value:      account?.available ? formatCurrency(account.availableBalance) : 'BDT 0',
+      subtext:    account?.available ? null : 'Available after Account module',
+      colorClass: 'from-emerald-600 to-emerald-800',
     },
     {
-      title: 'Transaction History',
-      description: 'View and filter your banking activity.',
-      icon: '📄',
-      path: null,
-    },
-    {
-      title: 'Support Ticket',
-      description: 'Create and track banking support requests.',
-      icon: '🎧',
-      path: null,
+      label:      'Pending Transfers',
+      value:      account?.available ? account.pendingAmount ?? 0 : '0',
+      subtext:    account?.available ? null : 'Available after Transfer module',
+      colorClass: 'from-amber-500 to-orange-600',
     },
   ];
 
-  const featureModules = [
-    {
-      title: 'Profile Management',
-      description: 'View and update encrypted personal information.',
-      badge: 'Live',
-      path: '/profile',
-    },
-    {
-      title: 'Account Details',
-      description: 'View account type, account number, and account status.',
-      badge: 'Planned',
-      path: null,
-    },
-    {
-      title: 'Account Balance',
-      description: 'Display current and available balance securely.',
-      badge: 'Planned',
-      path: null,
-    },
-    {
-      title: 'Beneficiary Management',
-      description: 'Add, edit, and manage beneficiaries.',
-      badge: 'Planned',
-      path: null,
-    },
-    {
-      title: 'Money Transfer',
-      description: 'Transfer money with secure validation and integrity checks.',
-      badge: 'Planned',
-      path: null,
-    },
-    {
-      title: 'Transaction History',
-      description: 'Check previous transfers and account activity.',
-      badge: 'Planned',
-      path: null,
-    },
-    {
-      title: 'Support Ticket System',
-      description: 'Create, edit, and monitor support tickets.',
-      badge: 'Planned',
-      path: null,
-    },
-    {
-      title: 'Notifications & Alerts',
-      description: 'Receive alerts for login, transfer, and account events.',
-      badge: 'Planned',
-      path: null,
-    },
-  ];
-
-  const accountCards = [
-    {
-      label: 'Total Balance',
-      value: formatCurrency(0),
-      subtext: 'Ready to connect with account API',
-      color: 'from-blue-700 to-blue-900',
-    },
-    {
-      label: 'Available Balance',
-      value: formatCurrency(0),
-      subtext: 'For future real-time balance data',
-      color: 'from-emerald-600 to-emerald-800',
-    },
-    {
-      label: 'Pending Transfers',
-      value: '0',
-      subtext: 'Will update after transfer module',
-      color: 'from-amber-500 to-orange-600',
-    },
-  ];
-
-  const recentUpdates = [
-    {
-      title: 'Secure login completed',
-      time: 'Current session',
-      desc: 'Password and OTP verification passed successfully.',
-    },
-    {
-      title: 'Session protection active',
-      time: 'Now',
-      desc: 'Short-lived access token, refresh session, and idle timeout are enabled.',
-    },
-    {
-      title: 'Dashboard prepared',
-      time: 'Development phase',
-      desc: 'This dashboard is ready for upcoming banking features.',
-    },
-  ];
-
-  const securityItems = [
-    'Password verification enabled',
-    'OTP verification enabled',
-    'HTTP-only refresh session active',
-    'Short-lived access token active',
-    'Idle timeout protection active',
-  ];
-
+  /* ── Render ─────────────────────────────────────────────────────────────── */
   return (
     <DashboardLayout>
       <div className="-m-8 min-h-screen bg-slate-100 px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl space-y-8">
-          {/* Hero */}
+
+          {/* ── Hero banner ───────────────────────────────────────────────── */}
           <section className="overflow-hidden rounded-3xl bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 shadow-soft">
             <div className="grid gap-6 px-6 py-8 lg:grid-cols-[1.5fr_0.8fr] lg:px-8 lg:py-10">
+
+              {/* Left */}
               <div>
                 <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-medium text-blue-100 ring-1 ring-white/10">
                   <span className="h-2 w-2 rounded-full bg-emerald-400" />
@@ -153,72 +340,68 @@ const DashboardPage = () => {
                 </div>
 
                 <h1 className="mt-5 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-                  Welcome back to SecureBank
+                  Welcome back{profile?.fullName ? `, ${profile.fullName.split(' ')[0]}` : ''}
                 </h1>
 
                 <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
-                  A fresh banking dashboard prepared for your upcoming modules —
-                  account balance, account details, beneficiaries, transfers,
-                  transactions, support tickets, notifications, and admin tools.
+                  {isAdmin
+                    ? 'You are logged in as an administrator. Manage users, support tickets, and system alerts from your dashboard.'
+                    : 'Your secure banking dashboard — profile management is live. Account balance, transfers, and more features are coming soon.'}
                 </p>
 
+                {/* Balance cards */}
                 <div className="mt-8 grid gap-4 sm:grid-cols-3">
-                  {accountCards.map((item) => (
-                    <div
-                      key={item.label}
-                      className={`rounded-2xl bg-gradient-to-br ${item.color} p-5 shadow-lg`}
-                    >
-                      <p className="text-sm font-medium text-white/80">{item.label}</p>
-                      <p className="mt-3 text-2xl font-extrabold text-white">
-                        {item.value}
-                      </p>
-                      <p className="mt-2 text-xs leading-5 text-white/75">
-                        {item.subtext}
-                      </p>
-                    </div>
+                  {balanceCards.map((card) => (
+                    <BalanceCard key={card.label} {...card} />
                   ))}
                 </div>
               </div>
 
+              {/* Right — profile card */}
               <div className="rounded-3xl border border-white/10 bg-white/10 p-6 backdrop-blur-sm">
                 <p className="text-sm font-medium text-slate-300">Customer Profile</p>
 
                 <div className="mt-5 flex items-center gap-4">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-xl font-bold text-white ring-1 ring-white/10">
-                    {(currentUser?.role || 'U').charAt(0).toUpperCase()}
-                  </div>
+                  <Avatar name={displayName} />
 
                   <div className="min-w-0">
                     <h2 className="truncate text-lg font-bold text-white">
-                      {currentUser?.id || 'Authenticated User'}
+                      {displayName}
                     </h2>
-                    <p className="mt-1 text-sm capitalize text-slate-300">
-                      Role: {currentUser?.role || 'user'}
+                    <p className="mt-1 truncate text-sm text-slate-400">
+                      {profile?.email || '—'}
+                    </p>
+                    <p className="mt-1 text-xs capitalize text-slate-400">
+                      Role:{' '}
+                      <span className="font-semibold text-blue-300">
+                        {currentUser?.role || 'user'}
+                      </span>
                     </p>
                   </div>
                 </div>
 
                 <div className="mt-6 space-y-3">
                   <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/10">
-                    <p className="text-xs uppercase tracking-wide text-slate-300">
-                      Account Type
+                    <p className="text-xs uppercase tracking-wide text-slate-300">Account Type</p>
+                    <p className="mt-2 font-semibold text-white">
+                      {account?.available ? account.accountType : 'Primary Savings'}
                     </p>
-                    <p className="mt-2 font-semibold text-white">Primary Savings</p>
                   </div>
 
                   <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/10">
-                    <p className="text-xs uppercase tracking-wide text-slate-300">
-                      Account Number
+                    <p className="text-xs uppercase tracking-wide text-slate-300">Account Number</p>
+                    <p className="mt-2 font-mono font-semibold text-white">
+                      {account?.available ? account.accountNumber : '•••• •••• •••• ——'}
                     </p>
-                    <p className="mt-2 font-semibold text-white">•••• •••• •••• 4821</p>
                   </div>
 
+                  {/* Unread notifications badge */}
                   <div className="rounded-2xl bg-emerald-500/10 p-4 ring-1 ring-emerald-400/20">
-                    <p className="text-xs uppercase tracking-wide text-emerald-200">
-                      Status
-                    </p>
+                    <p className="text-xs uppercase tracking-wide text-emerald-200">Notifications</p>
                     <p className="mt-2 font-semibold text-emerald-100">
-                      Secure session verified
+                      {notifications?.available
+                        ? `${notifications.unreadCount} unread`
+                        : 'Secure session verified'}
                     </p>
                   </div>
                 </div>
@@ -226,78 +409,92 @@ const DashboardPage = () => {
             </div>
           </section>
 
-          {/* Quick actions */}
-          <section>
-            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
-                  Quick Actions
+          {/* ── Admin stats (admin only) ───────────────────────────────────── */}
+          {isAdmin && (
+            <section>
+              <div className="mb-4">
+                <p className="text-sm font-semibold uppercase tracking-wide text-purple-700">
+                  Administration
                 </p>
                 <h2 className="text-2xl font-extrabold text-slate-900">
-                  Banking shortcuts
+                  System Overview
                 </h2>
               </div>
 
-              <p className="max-w-2xl text-sm text-slate-500">
-                These action buttons are already designed. When you implement a
-                feature, just add its route path in the array and the button will
-                become active.
-              </p>
-            </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <AdminStatCard
+                  label="Total Users"
+                  value={userStats?.totalUsers ?? 0}
+                  icon="👥"
+                  available={userStats?.available ?? false}
+                />
+                <AdminStatCard
+                  label="Open Tickets"
+                  value={ticketStats?.openCount ?? 0}
+                  icon="🎫"
+                  available={ticketStats?.available ?? false}
+                />
+                <AdminStatCard
+                  label="In Progress"
+                  value={ticketStats?.inProgressCount ?? 0}
+                  icon="🔧"
+                  available={ticketStats?.available ?? false}
+                />
+                <AdminStatCard
+                  label="Pending Alerts"
+                  value={alertStats?.pendingNotifications ?? 0}
+                  icon="🔔"
+                  available={alertStats?.available ?? false}
+                />
+              </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {quickActions.map((action) => {
-                const cardContent = (
-                  <>
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-2xl ring-1 ring-blue-100">
-                      {action.icon}
-                    </div>
+              {/* Admin quick actions */}
+              <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {adminActions.map((action) => (
+                  <QuickActionCard
+                    key={action.id}
+                    title={action.label}
+                    description={action.description}
+                    icon={ICON_MAP[action.id] ?? '⚙️'}
+                    path={action.available ? action.path : null}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
 
-                    <h3 className="mt-5 text-lg font-bold text-slate-900">
-                      {action.title}
-                    </h3>
+          {/* ── Quick actions (user) ──────────────────────────────────────── */}
+          {!isAdmin && (
+            <section>
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
+                    Quick Actions
+                  </p>
+                  <h2 className="text-2xl font-extrabold text-slate-900">Banking shortcuts</h2>
+                </div>
+                <p className="max-w-2xl text-sm text-slate-500">
+                  Active when the corresponding feature is implemented.
+                </p>
+              </div>
 
-                    <p className="mt-2 text-sm leading-6 text-slate-500">
-                      {action.description}
-                    </p>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {(quickActions.length > 0 ? quickActions : [
+                  { title: 'Transfer Money',       description: 'Send money securely.',              icon: '💸', path: null },
+                  { title: 'Add Beneficiary',      description: 'Save trusted accounts.',            icon: '👥', path: null },
+                  { title: 'Transaction History',  description: 'View and filter activity.',         icon: '📄', path: null },
+                  { title: 'Support Ticket',       description: 'Create and track requests.',        icon: '🎧', path: null },
+                ]).map((action) => (
+                  <QuickActionCard key={action.title} {...action} />
+                ))}
+              </div>
+            </section>
+          )}
 
-                    <div className="mt-6">
-                      {action.path ? (
-                        <span className="inline-flex items-center rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white">
-                          Open
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500">
-                          Coming Soon
-                        </span>
-                      )}
-                    </div>
-                  </>
-                );
-
-                return action.path ? (
-                  <Link
-                    key={action.title}
-                    to={action.path}
-                    className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card transition duration-200 hover:-translate-y-1 hover:border-blue-200 hover:shadow-xl"
-                  >
-                    {cardContent}
-                  </Link>
-                ) : (
-                  <div
-                    key={action.title}
-                    className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card"
-                  >
-                    {cardContent}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* Middle section */}
+          {/* ── Middle section ─────────────────────────────────────────────── */}
           <section className="grid gap-6 lg:grid-cols-[1.5fr_0.9fr]">
-            {/* Planned modules */}
+
+            {/* Banking modules grid */}
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card">
               <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
@@ -305,147 +502,97 @@ const DashboardPage = () => {
                     Banking Modules
                   </p>
                   <h2 className="text-2xl font-extrabold text-slate-900">
-                    Ready for future features
+                    {isAdmin ? 'All Features' : 'Available Features'}
                   </h2>
                 </div>
 
-                <div className="rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
-                  Add feature route to activate button
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">
+                    Live
+                  </span>
+                  = ready to use
                 </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                {featureModules.map((module) => (
-                  <div
-                    key={module.title}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-5 transition hover:border-blue-200 hover:bg-white"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-base font-bold text-slate-900">
-                          {module.title}
-                        </h3>
-                        <p className="mt-2 text-sm leading-6 text-slate-500">
-                          {module.description}
-                        </p>
-                      </div>
-
-                      <span
-                        className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
-                          module.badge === 'Live'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-amber-100 text-amber-700'
-                        }`}
-                      >
-                        {module.badge}
-                      </span>
-                    </div>
-
-                    <div className="mt-5">
-                      {module.path ? (
-                        <Link
-                          to={module.path}
-                          className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
-                        >
-                          Open Module
-                        </Link>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled
-                          className="inline-flex cursor-not-allowed items-center rounded-xl bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-500"
-                        >
-                          Button activates when route is added
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                {FEATURE_MODULES.map((mod) => (
+                  <ModuleCard key={mod.title} {...mod} />
                 ))}
               </div>
             </div>
 
-            {/* Right side */}
+            {/* Right column */}
             <div className="space-y-6">
-              {/* Security */}
+
+              {/* Support ticket summary */}
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-semibold text-slate-500">
-                      Security Center
-                    </p>
-                    <h2 className="mt-1 text-xl font-extrabold text-slate-900">
-                      Session & Access
-                    </h2>
+                    <p className="text-sm font-semibold text-slate-500">Support Center</p>
+                    <h2 className="mt-1 text-xl font-extrabold text-slate-900">Your Tickets</h2>
                   </div>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-xl ring-1 ring-blue-100">
+                    🎫
+                  </div>
+                </div>
 
+                <div className="mt-6 space-y-3">
+                  {[
+                    { label: 'Open',    value: tickets?.openCount    ?? 0, color: 'bg-blue-500'   },
+                    { label: 'Pending', value: tickets?.pendingCount  ?? 0, color: 'bg-amber-500'  },
+                    { label: 'Closed',  value: tickets?.closedCount   ?? 0, color: 'bg-emerald-500'},
+                  ].map(({ label, value, color }) => (
+                    <div key={label} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
+                        <span className="text-sm font-medium text-slate-700">{label}</span>
+                      </div>
+                      <span className="text-sm font-bold text-slate-900">
+                        {tickets?.available ? value : '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-5">
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full cursor-not-allowed rounded-xl bg-slate-100 py-2.5 text-sm font-bold text-slate-400"
+                  >
+                    Open Support Ticket — Coming Soon
+                  </button>
+                </div>
+              </div>
+
+              {/* Security center */}
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-500">Security Center</p>
+                    <h2 className="mt-1 text-xl font-extrabold text-slate-900">Session & Access</h2>
+                  </div>
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-xl ring-1 ring-emerald-100">
                     🔐
                   </div>
                 </div>
 
                 <div className="mt-6 space-y-3">
-                  {securityItems.map((item) => (
-                    <div
-                      key={item}
-                      className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3"
-                    >
-                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                      <span className="text-sm font-medium text-slate-700">
-                        {item}
-                      </span>
-                    </div>
+                  {SECURITY_ITEMS.map((item) => (
+                    <SecurityItem key={item} text={item} />
                   ))}
                 </div>
               </div>
 
-              {/* Recent updates */}
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card">
-                <p className="text-sm font-semibold text-slate-500">
-                  Recent Activity
+              {/* Last updated note */}
+              {data?.generatedAt && (
+                <p className="text-center text-xs text-slate-400">
+                  Dashboard data as of {formatDate(data.generatedAt)}
                 </p>
-                <h2 className="mt-1 text-xl font-extrabold text-slate-900">
-                  System updates
-                </h2>
-
-                <div className="mt-6 space-y-5">
-                  {recentUpdates.map((item, index) => (
-                    <div key={item.title} className="flex gap-4">
-                      <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">
-                        {index + 1}
-                      </div>
-
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900">
-                          {item.title}
-                        </h3>
-                        <p className="mt-1 text-sm leading-6 text-slate-500">
-                          {item.desc}
-                        </p>
-                        <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                          {item.time}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Help card */}
-              <div className="rounded-3xl bg-gradient-to-br from-blue-700 to-slate-900 p-6 text-white shadow-soft">
-                <p className="text-sm font-medium text-blue-100">Developer Note</p>
-                <h2 className="mt-2 text-xl font-extrabold">
-                  How to enable a module button
-                </h2>
-
-                <div className="mt-5 space-y-3 text-sm leading-6 text-slate-200">
-                  <p>1. Build the feature page.</p>
-                  <p>2. Add the route in your App router.</p>
-                  <p>3. Put the route path in the dashboard array.</p>
-                  <p>4. The disabled button will automatically become active.</p>
-                </div>
-              </div>
+              )}
             </div>
           </section>
+
         </div>
       </div>
     </DashboardLayout>

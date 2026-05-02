@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * app.js — Express Application (Phase 1: Registration & Login)
+ * app.js — Express Application
  *
  * Responsibilities:
  *   - Load environment variables
@@ -11,10 +11,15 @@
  *   - Start HTTP server
  *   - Global error handling
  *
- * Routes exposed (Phase 1 only):
- *   POST /api/auth/register
- *   POST /api/auth/login
- *   GET  /health
+ * Routes exposed:
+ *   POST /api/auth/register          – Registration + OTP
+ *   POST /api/auth/login             – Login + OTP 2FA
+ *   GET  /api/auth/me                – Current user info
+ *   GET  /api/profile/me             – Feature 6: User profile
+ *   PUT  /api/profile/me             – Feature 6: Update profile
+ *   GET  /api/dashboard/summary      – Feature 7: User dashboard
+ *   GET  /api/dashboard/admin/summary – Feature 7: Admin dashboard
+ *   GET  /health                     – Liveness probe
  */
 
 require('dotenv').config();
@@ -24,13 +29,14 @@ const cors     = require('cors');
 const helmet   = require('helmet');
 const morgan   = require('morgan');
 
-const connectDB      = require('./config/db');
-const authRoutes     = require('./routes/authRoutes');
-const profileRoutes  = require('./routes/profileRoutes');
-const rateLimiter    = require('./middleware/rateLimiter');
-const logger         = require('./utils/logger');
+const connectDB         = require('./config/db');
+const authRoutes        = require('./routes/authRoutes');
+const profileRoutes     = require('./routes/profileRoutes');
+const dashboardRoutes   = require('./routes/dashboardRoutes');
+const rateLimiter       = require('./middleware/rateLimiter');
+const logger            = require('./utils/logger');
 const { notFoundHandler, globalErrorHandler } = require('./middleware/errorMiddleware');
-const keyRoutes = require('./routes/keyRoutes');
+const keyRoutes         = require('./routes/keyRoutes');
 
 // ── Express app ───────────────────────────────────────────────────────────────
 const app = express();
@@ -62,9 +68,10 @@ if (process.env.NODE_ENV !== 'test') {
 app.use('/api/', rateLimiter);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/api/auth', authRoutes);
-app.use('/api/keys', keyRoutes);
-app.use('/api/profile', profileRoutes);
+app.use('/api/auth',      authRoutes);
+app.use('/api/keys',      keyRoutes);
+app.use('/api/profile',   profileRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
