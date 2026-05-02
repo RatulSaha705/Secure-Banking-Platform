@@ -88,15 +88,34 @@ const sendOtpEmail = async ({ to, otp, purpose, expiresInMinutes }) => {
 
   const email = buildOtpEmail({ otp, purpose, expiresInMinutes });
 
+  // Temporary development mode:
+  // Keeps 2FA active but stops sending real email.
+  if (process.env.DISABLE_OTP_EMAIL === 'true') {
+    console.log('[OTP EMAIL DISABLED]');
+    console.log(`[OTP EMAIL DISABLED] To: ${to}`);
+    console.log(`[OTP EMAIL DISABLED] Purpose: ${purpose}`);
+    console.log(`[OTP EMAIL DISABLED] Subject: ${email.subject}`);
+    console.log(`[OTP EMAIL DISABLED] OTP: ${otp}`);
+    console.log(`[OTP EMAIL DISABLED] Expires in: ${expiresInMinutes} minutes`);
+
+    return {
+      sent: false,
+      disabled: true,
+      devOtp: otp,
+    };
+  }
+
   if (!isEmailConfigured()) {
     if (process.env.EMAIL_ALLOW_CONSOLE_FALLBACK === 'true') {
       console.log('[EMAIL FALLBACK] SMTP not configured.');
       console.log(`[EMAIL FALLBACK] To: ${to}`);
       console.log(`[EMAIL FALLBACK] Subject: ${email.subject}`);
       console.log(`[EMAIL FALLBACK] OTP: ${otp}`);
+
       return {
         sent: false,
         fallback: true,
+        devOtp: otp,
       };
     }
 
@@ -118,7 +137,6 @@ const sendOtpEmail = async ({ to, otp, purpose, expiresInMinutes }) => {
     messageId: info.messageId,
   };
 };
-
 module.exports = {
   isEmailConfigured,
   sendOtpEmail,

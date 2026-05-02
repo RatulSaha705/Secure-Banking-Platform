@@ -7,6 +7,7 @@ import {
   getUserDashboard,
   getAdminDashboard,
 } from '../services/dashboardService';
+import { getMyNotifications } from '../services/notificationService';
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* Helpers                                                                      */
@@ -256,8 +257,9 @@ const DashboardPage = () => {
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin';
 
-  const [data,    setData]    = useState(null);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [recentNotifications, setRecentNotifications] = useState([]);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -275,9 +277,21 @@ const DashboardPage = () => {
     }
   }, [isAdmin]);
 
+  const fetchRecentNotifications = useCallback(async () => {
+    try {
+      const res = await getMyNotifications();
+      const list = res.data?.data?.notifications || [];
+  
+      setRecentNotifications(list.slice(0, 3));
+    } catch {
+      setRecentNotifications([]);
+    }
+  }, []);
+
   useEffect(() => {
     fetchDashboard();
-  }, [fetchDashboard]);
+    fetchRecentNotifications();
+  }, [fetchDashboard, fetchRecentNotifications]);
 
   if (loading) return <DashboardSkeleton />;
 
@@ -287,7 +301,8 @@ const DashboardPage = () => {
   const transactions = data?.transactions;
   const recentTxns   = transactions?.available ? (transactions.transactions ?? []) : [];
   const notifications = data?.notifications;
-  const tickets      = data?.tickets;
+  const latestNotification = recentNotifications.length > 0 ? recentNotifications[0] : null;
+  const tickets = data?.tickets;
   const quickActions = (data?.quickActions ?? []).map((qa) => ({
     title:       qa.label,
     description: qa.description,
@@ -415,15 +430,49 @@ const DashboardPage = () => {
                     </p>
                   </div>
 
-                  {/* Unread notifications badge */}
-                  <div className="rounded-2xl bg-emerald-500/10 p-4 ring-1 ring-emerald-400/20">
-                    <p className="text-xs uppercase tracking-wide text-emerald-200">Notifications</p>
-                    <p className="mt-2 font-semibold text-emerald-100">
-                      {notifications?.available
-                        ? `${notifications.unreadCount} unread`
-                        : 'Secure session verified'}
-                    </p>
-                  </div>
+                  {/* Recent notification */}
+<Link
+  to="/notifications"
+  className="block rounded-2xl bg-emerald-500/10 p-4 ring-1 ring-emerald-400/20 transition hover:bg-emerald-500/20"
+>
+  <div className="flex items-center justify-between gap-3">
+    <p className="text-xs uppercase tracking-wide text-emerald-200">
+      Notifications
+    </p>
+
+    {notifications?.available && notifications.unreadCount > 0 && (
+      <span className="rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white">
+        {notifications.unreadCount}
+      </span>
+    )}
+  </div>
+
+  {latestNotification ? (
+    <>
+      <p className="mt-2 line-clamp-1 font-semibold text-emerald-100">
+        {latestNotification.title}
+      </p>
+
+      <p className="mt-1 line-clamp-2 text-xs leading-5 text-emerald-100/80">
+        {latestNotification.message}
+      </p>
+
+      <p className="mt-2 text-xs font-semibold text-emerald-200">
+        View all notifications →
+      </p>
+    </>
+  ) : (
+    <>
+      <p className="mt-2 font-semibold text-emerald-100">
+        Secure session verified
+      </p>
+
+      <p className="mt-1 text-xs text-emerald-100/70">
+        Recent alerts will appear here.
+      </p>
+    </>
+  )}
+</Link>
                 </div>
               </div>
             </div>
