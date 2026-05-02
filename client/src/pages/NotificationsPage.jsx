@@ -5,11 +5,11 @@ import toast from 'react-hot-toast';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../context/AuthContext';
 import {
-  getMyNotifications,
-  markNotificationAsRead,
-  markAllNotificationsAsRead,
-  adminSendUserNotification,
-} from '../services/notificationService';
+    getMyNotifications,
+    markNotificationAsRead,
+    markAllNotificationsAsRead,
+    adminSendAccountNumberNotification,
+  } from '../services/notificationService';
 
 const TYPE_OPTIONS = [
   { value: '', label: 'All Types' },
@@ -27,12 +27,12 @@ const READ_OPTIONS = [
 ];
 
 const ADMIN_FORM_INITIAL = {
-  userId: '',
-  type: 'GENERAL_ALERT',
-  title: '',
-  message: '',
-  body: '',
-};
+    accountNumber: '',
+    type: 'GENERAL_ALERT',
+    title: '',
+    message: '',
+    body: '',
+  };
 
 const getApiError = (err, fallback) => {
   return err?.response?.data?.message || err?.message || fallback;
@@ -185,29 +185,29 @@ const AdminSendNotificationForm = ({
           Send User Notification
         </h2>
         <p className="mt-1 text-sm text-gray-500">
-          Send an encrypted notification to a specific user by user ID.
+        Send an encrypted notification to a specific user by account number.
         </p>
       </div>
 
       <div className="space-y-4">
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-700">
-            Target User ID
+          Target Account Number
           </label>
 
-          <input
+            <input
             type="text"
-            value={form.userId}
+            value={form.accountNumber}
             onChange={(e) =>
-              setForm((prev) => ({
+            setForm((prev) => ({
                 ...prev,
-                userId: e.target.value,
-              }))
+                accountNumber: e.target.value,
+            }))
             }
             className="w-full rounded-xl border border-gray-300 px-4 py-3"
-            placeholder="Paste user MongoDB _id"
+            placeholder="Example: 1212 6125 1602 8111"
             required
-          />
+            />
         </div>
 
         <div>
@@ -378,17 +378,18 @@ const NotificationsPage = () => {
   const handleAdminSend = async (e) => {
     e.preventDefault();
     setSending(true);
-
+  
     try {
-      await adminSendUserNotification(adminForm.userId.trim(), {
+      await adminSendAccountNumberNotification({
+        accountNumber: adminForm.accountNumber.trim(),
         type: adminForm.type,
         title: adminForm.title.trim(),
         message: adminForm.message.trim(),
         body: adminForm.body.trim(),
       });
-
+  
       toast.success('Notification sent successfully.');
-
+  
       setAdminForm(ADMIN_FORM_INITIAL);
       await fetchNotifications();
     } catch (err) {

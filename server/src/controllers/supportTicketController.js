@@ -7,7 +7,7 @@
  *
  * Feature 14 integration:
  *   - Admins get notification when user creates a support ticket.
- *   - User gets notification when admin resolves a support ticket.
+ *   - User gets notification when admin changes ticket status/priority marking.
  */
 
 const {
@@ -23,11 +23,87 @@ const {
 
 const {
   safeCreateSupportTicketCreatedAdminNotification,
-  safeCreateSupportTicketResolvedUserNotification,
+  createNotification,
 } = require('../services/notificationService');
 
 const logger = require('../utils/logger');
 const { sendError } = require('../utils/controllerHelpers');
+
+const formatStatusLabel = (status) => {
+  const clean = String(status || '').trim().toUpperCase();
+
+  if (clean === 'OPEN') return 'Open';
+  if (clean === 'IN_PROGRESS') return 'In Progress';
+  if (clean === 'WAITING_USER') return 'Waiting User';
+  if (clean === 'RESOLVED') return 'Resolved';
+  if (clean === 'CLOSED') return 'Closed';
+
+  return clean || 'Unknown';
+};
+
+const formatPriorityLabel = (priority) => {
+  const clean = String(priority || '').trim().toUpperCase();
+
+  if (clean === 'LOW') return 'Low';
+  if (clean === 'MEDIUM') return 'Medium';
+  if (clean === 'HIGH') return 'High';
+  if (clean === 'URGENT') return 'Urgent';
+
+  return clean || 'Unknown';
+};
+
+const notifyUserAboutTicketMarkingChange = async ({ oldTicket, newTicket }) => {
+  try {
+    if (!oldTicket || !newTicket) {
+      return null;
+    }
+
+    const oldStatus = String(oldTicket.status || '').toUpperCase();
+    const newStatus = String(newTicket.status || '').toUpperCase();
+    const oldPriority = String(oldTicket.priority || '').toUpperCase();
+    const newPriority = String(newTicket.priority || '').toUpperCase();
+
+    const statusChanged = oldStatus !== newStatus;
+    const priorityChanged = oldPriority !== newPriority;
+
+    if (!statusChanged && !priorityChanged) {
+      return null;
+    }
+
+    let title = 'Support ticket updated';
+    let message = `Your support ticket "${newTicket.title}" was updated by admin.`;
+
+    if (statusChanged) {
+      title = 'Support ticket status changed';
+      message =
+        `Your support ticket "${newTicket.title}" is now marked as ` +
+        `${formatStatusLabel(newStatus)}.`;
+    }
+
+    if (newStatus === 'RESOLVED') {
+      title = 'Support ticket resolved';
+      message = `Your support ticket "${newTicket.title}" has been marked as Resolved.`;
+    }
+
+    const body =
+      `Ticket ID: ${newTicket.id}. ` +
+      `Old Status: ${formatStatusLabel(oldStatus)}. ` +
+      `New Status: ${formatStatusLabel(newStatus)}. ` +
+      `Old Priority: ${formatPriorityLabel(oldPriority)}. ` +
+      `New Priority: ${formatPriorityLabel(newPriority)}. ` +
+      `Please check your Support Tickets page for details.`;
+
+    return await createNotification({
+      userId: newTicket.userId,
+      type: newStatus === 'RESOLVED' ? 'SUPPORT_TICKET_RESOLVED' : 'GENERAL_ALERT',
+      title,
+      message,
+      body,
+    });
+  } catch {
+    return null;
+  }
+};
 
 const createHandler = async (req, res, next) => {
   try {
@@ -136,11 +212,14 @@ const adminGetByIdHandler = async (req, res, next) => {
 
 const adminManageHandler = async (req, res, next) => {
   try {
+    const oldTicket = await getSupportTicketForAdmin(req.params.id);
+
     const ticket = await manageSupportTicketAsAdmin(req.user.id, req.params.id, req.body);
 
-    if (String(ticket.status || '').toUpperCase() === 'RESOLVED') {
-      await safeCreateSupportTicketResolvedUserNotification(ticket);
-    }
+    await notifyUserAboutTicketMarkingChange({
+      oldTicket,
+      newTicket: ticket,
+    });
 
     logger.info(`Support ticket ${ticket.id} managed by admin ${req.user.id}`);
 

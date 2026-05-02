@@ -53,17 +53,21 @@ const Sidebar = () => {
         💰 Account Balance
       </NavLink>
 
-      <NavLink to="/transfer" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-        💸 Money Transfer
-      </NavLink>
+      {!isAdmin && (
+        <>
+          <NavLink to="/transfer" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            💸 Money Transfer
+          </NavLink>
 
-      <NavLink to="/transactions" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-        📜 Transaction History
-      </NavLink>
+          <NavLink to="/transactions" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            📜 Transaction History
+          </NavLink>
 
-      <NavLink to="/support-tickets" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-        🎧 Support Tickets
-      </NavLink>
+          <NavLink to="/support-tickets" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            🎧 Support Tickets
+          </NavLink>
+        </>
+      )}
 
       <NavLink to="/notifications" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
         <span>🔔 Notifications</span>
@@ -86,9 +90,15 @@ const Sidebar = () => {
       </NavLink>
 
       {isAdmin && (
-        <NavLink to="/admin/support-tickets" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          🛡️ Admin Tickets
-        </NavLink>
+        <>
+          <NavLink to="/admin" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            🧭 Admin Panel
+          </NavLink>
+
+          <NavLink to="/admin/support-tickets" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            🛡️ Admin Tickets
+          </NavLink>
+        </>
       )}
 
       <div style={{ marginTop: 'auto' }}>

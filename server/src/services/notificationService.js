@@ -5,17 +5,22 @@
  *
  * Feature 14 — Notifications and Alerts.
  *
+ * Updated:
+ *   Admin can send notification by account number.
+ *
  * Security:
  *   - Only _id stays readable in MongoDB.
- *   - userId/title/message/body/type/isRead/createdAt/updatedAt are encrypted.
- *   - NOTIFICATION data type uses ECC from encryptionPolicy.js.
- *   - MAC integrity is added and verified by encrypted storage layer.
+ *   - Notification values are encrypted.
+ *   - Account number is encrypted, so admin notification by account number
+ *     scans/decrypts accounts safely and then matches the plaintext value
+ *     after authorization.
  */
 
 const mongoose = require('mongoose');
 
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const Account = require('../models/Account');
 
 const { ROLES, normalizeRole } = require('../constants/roles');
 const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/storage');
@@ -37,8 +42,16 @@ const userCtx = (userId) => {
   return buildSecCtx('users', userId, userId);
 };
 
+const accountCtx = (userId, accountId) => {
+  return buildSecCtx('accounts', userId, accountId);
+};
+
 const cleanText = (value) => {
   return String(value || '').trim();
+};
+
+const normalizeAccountNumber = (value) => {
+  return String(value || '').replace(/\s+/g, '').trim();
 };
 
 const assertValidObjectId = (value, label) => {
@@ -83,17 +96,64 @@ const getOwnerIdFromEnvelope = (enc) => {
   return '';
 };
 
+const getAccountOwnerIdFromEnvelope = (enc) => {
+  const possibleFields = [
+    enc?.userId,
+    enc?.ownerUserId,
+    enc?.accountOwnerId,
+  ];
+
+  for (const field of possibleFields) {
+    if (field?.ownerUserId) {
+      return String(field.ownerUserId);
+    }
+
+    if (field?.metadata?.ownerId) {
+      return String(field.metadata.ownerId);
+    }
+
+    if (field?.metadata?.userId) {
+      return String(field.metadata.userId);
+    }
+  }
+
+  return '';
+};
+
 const decryptUserDocument = async (enc) => {
   if (!enc) {
     return null;
   }
 
   const userId = toIdString(enc._id);
-
   const dec = await decryptSensitiveFields('USER', enc, userCtx(userId));
 
   dec._id = userId;
   dec.id = userId;
+
+  return dec;
+};
+
+const decryptAccountDocument = async (enc) => {
+  if (!enc) {
+    return null;
+  }
+
+  const accountId = toIdString(enc._id);
+  const ownerUserId = getAccountOwnerIdFromEnvelope(enc);
+
+  if (!ownerUserId) {
+    return null;
+  }
+
+  const dec = await decryptSensitiveFields(
+    'ACCOUNT',
+    enc,
+    accountCtx(ownerUserId, accountId)
+  );
+
+  dec._id = accountId;
+  dec.id = accountId;
 
   return dec;
 };
@@ -177,6 +237,68 @@ const createNotification = async ({ userId, title, message, body, type }) => {
   const dec = await decryptNotificationDocument(saved.toObject(), cleanUserId);
 
   return toPublicNotification(dec);
+};
+
+const findUserIdByAccountNumber = async (accountNumber) => {
+  const cleanAccountNumber = normalizeAccountNumber(accountNumber);
+
+  if (!cleanAccountNumber) {
+    const err = new Error('Account number is required');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const accounts = await Account.find({}).lean();
+
+  for (const enc of accounts) {
+    try {
+      const dec = await decryptAccountDocument(enc);
+
+      if (!dec) {
+        continue;
+      }
+
+      const currentAccountNumber = normalizeAccountNumber(
+        dec.accountNumber || dec.number || dec.accountNo
+      );
+
+      if (currentAccountNumber === cleanAccountNumber) {
+        const userId =
+          dec.userId ||
+          dec.ownerUserId ||
+          dec.accountOwnerId ||
+          getAccountOwnerIdFromEnvelope(enc);
+
+        if (userId && mongoose.Types.ObjectId.isValid(String(userId))) {
+          return String(userId);
+        }
+      }
+    } catch {
+      // Skip tampered or undecryptable account.
+    }
+  }
+
+  const err = new Error('No user found for this account number');
+  err.statusCode = 404;
+  throw err;
+};
+
+const createNotificationByAccountNumber = async ({
+  accountNumber,
+  title,
+  message,
+  body,
+  type,
+}) => {
+  const userId = await findUserIdByAccountNumber(accountNumber);
+
+  return createNotification({
+    userId,
+    type,
+    title,
+    message,
+    body,
+  });
 };
 
 const getMyNotifications = async (userId, filters = {}) => {
@@ -453,6 +575,7 @@ module.exports = {
   NOTIFICATION_TYPES,
 
   createNotification,
+  createNotificationByAccountNumber,
   createNotificationForAllAdmins,
 
   getMyNotifications,

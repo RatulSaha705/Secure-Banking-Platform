@@ -34,6 +34,7 @@ const transferRoutes = require('./routes/transferRoutes');
 const beneficiaryRoutes = require('./routes/beneficiaryRoutes');
 const supportTicketRoutes = require('./routes/supportTicketRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const adminPanelRoutes = require('./routes/adminPanelRoutes');
 
 const rateLimiter = require('./middleware/rateLimiter');
 const logger = require('./utils/logger');
@@ -73,6 +74,7 @@ app.use('/api/transfer', transferRoutes);
 app.use('/api/beneficiary', beneficiaryRoutes);
 app.use('/api/support-tickets', supportTicketRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/admin', adminPanelRoutes);
 
 app.get('/health', (_req, res) => {
   res.json({

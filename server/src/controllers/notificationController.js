@@ -12,6 +12,7 @@ const {
   markNotificationAsRead,
   markAllMyNotificationsAsRead,
   createNotification,
+  createNotificationByAccountNumber,
 } = require('../services/notificationService');
 
 const logger = require('../utils/logger');
@@ -100,10 +101,34 @@ const adminSendUserNotificationHandler = async (req, res, next) => {
   }
 };
 
+const adminSendAccountNumberNotificationHandler = async (req, res, next) => {
+  try {
+    const notification = await createNotificationByAccountNumber({
+      accountNumber: req.body.accountNumber,
+      type: req.body.type || 'GENERAL_ALERT',
+      title: req.body.title,
+      message: req.body.message,
+      body: req.body.body,
+    });
+
+    logger.info(`Admin ${req.user.id} created notification by account number`);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Notification sent successfully by account number.',
+      data: notification,
+    });
+  } catch (err) {
+    if (err.statusCode) return sendError(res, err);
+    return next(err);
+  }
+};
+
 module.exports = {
   listMyNotificationsHandler,
   unreadCountHandler,
   markReadHandler,
   markAllReadHandler,
   adminSendUserNotificationHandler,
+  adminSendAccountNumberNotificationHandler,
 };

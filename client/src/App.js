@@ -15,6 +15,7 @@ import TransactionHistoryPage from './pages/TransactionHistoryPage';
 import SupportTicketsPage from './pages/SupportTicketsPage';
 import AdminSupportTicketsPage from './pages/AdminSupportTicketsPage';
 import NotificationsPage from './pages/NotificationsPage';
+import AdminPanelPage from './pages/AdminPanelPage';
 
 const App = () => {
   return (
@@ -45,6 +46,7 @@ const App = () => {
             <Route path="/support-tickets" element={<SupportTicketsPage />} />
             <Route path="/admin/support-tickets" element={<AdminSupportTicketsPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/admin" element={<AdminPanelPage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

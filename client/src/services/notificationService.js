@@ -25,3 +25,7 @@ export const markAllNotificationsAsRead = () => {
 export const adminSendUserNotification = (userId, payload) => {
   return api.post(`/notifications/admin/user/${userId}`, payload);
 };
+
+export const adminSendAccountNumberNotification = (payload) => {
+  return api.post('/notifications/admin/account-number', payload);
+};
