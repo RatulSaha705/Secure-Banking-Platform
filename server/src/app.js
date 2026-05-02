@@ -30,21 +30,22 @@
 
 require('dotenv').config();
 
-const express  = require('express');
-const cors     = require('cors');
-const helmet   = require('helmet');
-const morgan   = require('morgan');
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
 
-const connectDB         = require('./config/db');
-const authRoutes        = require('./routes/authRoutes');
-const profileRoutes     = require('./routes/profileRoutes');
-const dashboardRoutes   = require('./routes/dashboardRoutes');
-const accountRoutes     = require('./routes/accountRoutes');
-const transferRoutes    = require('./routes/transferRoutes');
-const rateLimiter       = require('./middleware/rateLimiter');
-const logger            = require('./utils/logger');
+const connectDB = require('./config/db');
+const authRoutes = require('./routes/authRoutes');
+const profileRoutes = require('./routes/profileRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const accountRoutes = require('./routes/accountRoutes');
+const transferRoutes = require('./routes/transferRoutes');
+const rateLimiter = require('./middleware/rateLimiter');
+const logger = require('./utils/logger');
 const { notFoundHandler, globalErrorHandler } = require('./middleware/errorMiddleware');
-const keyRoutes         = require('./routes/keyRoutes');
+const keyRoutes = require('./routes/keyRoutes');
 
 // ── Express app ───────────────────────────────────────────────────────────────
 const app = express();
@@ -63,6 +64,7 @@ app.use(cors({
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10kb' }));
+app.use(cookieParser());
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
 // ── HTTP request logging ──────────────────────────────────────────────────────
@@ -76,12 +78,12 @@ if (process.env.NODE_ENV !== 'test') {
 app.use('/api/', rateLimiter);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/api/auth',      authRoutes);
-app.use('/api/keys',      keyRoutes);
-app.use('/api/profile',   profileRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/keys', keyRoutes);
+app.use('/api/profile', profileRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/account',   accountRoutes);
-app.use('/api/transfer',  transferRoutes);
+app.use('/api/account', accountRoutes);
+app.use('/api/transfer', transferRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
