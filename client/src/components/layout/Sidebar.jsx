@@ -2,9 +2,13 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
+const normalizeRole = (role) => String(role || '').trim().toLowerCase();
+
 const Sidebar = () => {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
+  const role = normalizeRole(currentUser?.role);
+  const isAdmin = role === 'admin';
 
   const handleLogout = async () => {
     await logout();
@@ -35,6 +39,16 @@ const Sidebar = () => {
         📜 Transaction History
       </NavLink>
 
+      <NavLink to="/support-tickets" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+        🎧 Support Tickets
+      </NavLink>
+
+      {isAdmin && (
+        <NavLink to="/admin/support-tickets" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          🛡️ Admin Tickets
+        </NavLink>
+      )}
+
       <div style={{ marginTop: 'auto' }}>
         <div
           style={{
@@ -44,8 +58,8 @@ const Sidebar = () => {
             borderTop: '1px solid var(--color-border)',
           }}
         >
-          <span className={`badge badge-${currentUser?.role === 'admin' ? 'admin' : 'user'}`}>
-            {currentUser?.role || 'user'}
+          <span className={`badge badge-${isAdmin ? 'admin' : 'user'}`}>
+            {role || 'user'}
           </span>
         </div>
 

@@ -12,20 +12,25 @@
  *   - Global error handling
  *
  * Routes exposed:
- *   POST /api/auth/register          – Registration + OTP
- *   POST /api/auth/login             – Login + OTP 2FA
- *   GET  /api/auth/me                – Current user info
- *   GET  /api/profile/me             – Feature 6: User profile
- *   PUT  /api/profile/me             – Feature 6: Update profile
- *   GET  /api/dashboard/summary      – Feature 7: User dashboard
+ *   POST /api/auth/register           – Registration + OTP
+ *   POST /api/auth/login              – Login + OTP 2FA
+ *   GET  /api/auth/me                 – Current user info
+ *   GET  /api/profile/me              – Feature 6: User profile
+ *   PUT  /api/profile/me              – Feature 6: Update profile
+ *   GET  /api/dashboard/summary       – Feature 7: User dashboard
  *   GET  /api/dashboard/admin/summary – Feature 7: Admin dashboard
- *   GET  /api/account/balance        – Feature 8: View account balance
- *   GET  /api/account/me             – Feature 8: Full account details
- *   GET  /api/account/admin/:userId  – Feature 8: Admin view any account
- *   POST /api/transfer/initiate      – Feature 10: Initiate money transfer
- *   GET  /api/transfer/history       – Feature 10: Transaction history
- *   GET  /api/transfer/history/:id   – Feature 10: Single transaction
- *   GET  /health                     – Liveness probe
+ *   GET  /api/account/balance         – Feature 8: View account balance
+ *   GET  /api/account/me              – Feature 8: Full account details
+ *   GET  /api/account/admin/:userId   – Feature 8: Admin view any account
+ *   POST /api/transfer/initiate       – Feature 10: Initiate money transfer
+ *   GET  /api/transfer/history        – Feature 12: Transaction history
+ *   GET  /api/transfer/history/:id    – Feature 12: Single transaction
+ *   GET  /api/beneficiary             – Feature 11: List beneficiaries
+ *   POST /api/beneficiary             – Feature 11: Add beneficiary
+ *   GET  /api/support-tickets         – Feature 13: List my support tickets
+ *   POST /api/support-tickets         – Feature 13: Create support ticket
+ *   GET  /api/support-tickets/admin/all – Feature 13: Admin review tickets
+ *   GET  /health                      – Liveness probe
  */
 
 require('dotenv').config();
@@ -37,16 +42,19 @@ const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 
 const connectDB = require('./config/db');
+
 const authRoutes = require('./routes/authRoutes');
+const keyRoutes = require('./routes/keyRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const accountRoutes = require('./routes/accountRoutes');
 const transferRoutes = require('./routes/transferRoutes');
 const beneficiaryRoutes = require('./routes/beneficiaryRoutes');
+const supportTicketRoutes = require('./routes/supportTicketRoutes');
+
 const rateLimiter = require('./middleware/rateLimiter');
 const logger = require('./utils/logger');
 const { notFoundHandler, globalErrorHandler } = require('./middleware/errorMiddleware');
-const keyRoutes = require('./routes/keyRoutes');
 
 // ── Express app ───────────────────────────────────────────────────────────────
 const app = express();
@@ -83,9 +91,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/keys', keyRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/account',     accountRoutes);
-app.use('/api/transfer',    transferRoutes);
+app.use('/api/account', accountRoutes);
+app.use('/api/transfer', transferRoutes);
 app.use('/api/beneficiary', beneficiaryRoutes);
+app.use('/api/support-tickets', supportTicketRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
@@ -114,4 +123,4 @@ const startServer = async () => {
 
 startServer();
 
-module.exports = app; // exported for potential test usage
+module.exports = app;

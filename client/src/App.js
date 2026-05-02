@@ -12,6 +12,8 @@ import ProfilePage from './pages/ProfilePage';
 import AccountBalancePage from './pages/AccountBalancePage';
 import TransferPage from './pages/TransferPage';
 import TransactionHistoryPage from './pages/TransactionHistoryPage';
+import SupportTicketsPage from './pages/SupportTicketsPage';
+import AdminSupportTicketsPage from './pages/AdminSupportTicketsPage';
 
 const App = () => {
   return (
@@ -34,11 +36,13 @@ const App = () => {
           <Route path="/register" element={<RegisterPage />} />
 
           <Route element={<PrivateRoute />}>
-            <Route path="/dashboard"         element={<DashboardPage />} />
-            <Route path="/profile"           element={<ProfilePage />} />
-            <Route path="/account-balance"   element={<AccountBalancePage />} />
-            <Route path="/transfer"          element={<TransferPage />} />
-            <Route path="/transactions"      element={<TransactionHistoryPage />} />
+            <Route path="/dashboard"              element={<DashboardPage />} />
+            <Route path="/profile"                element={<ProfilePage />} />
+            <Route path="/account-balance"        element={<AccountBalancePage />} />
+            <Route path="/transfer"               element={<TransferPage />} />
+            <Route path="/transactions"           element={<TransactionHistoryPage />} />
+            <Route path="/support-tickets"        element={<SupportTicketsPage />} />
+            <Route path="/admin/support-tickets"  element={<AdminSupportTicketsPage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
