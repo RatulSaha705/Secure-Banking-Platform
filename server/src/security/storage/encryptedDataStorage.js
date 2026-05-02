@@ -46,6 +46,8 @@ const {
   verifyEncryptedFieldMac,
 } = require('../integrity');
 
+const { toIdString } = require('../../utils/serviceHelpers');
+
 const {
   getStoragePolicy,
   getDataTypeForField,
@@ -85,25 +87,7 @@ const clonePlainObject = (value) => {
   return JSON.parse(JSON.stringify(value));
 };
 
-const toIdString = (value) => {
-  if (value === undefined || value === null) {
-    return '';
-  }
-
-  if (typeof value === 'object') {
-    if (value._id) {
-      return String(value._id);
-    }
-
-    if (value.id) {
-      return String(value.id);
-    }
-
-    return '';
-  }
-
-  return String(value);
-};
+// toIdString imported from ../../utils/serviceHelpers
 
 const getDocumentId = (document, explicitDocumentId) => {
   const directDocumentId = toIdString(explicitDocumentId);

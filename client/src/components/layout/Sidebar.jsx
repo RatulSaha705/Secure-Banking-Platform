@@ -23,6 +23,18 @@ const Sidebar = () => {
         👤 My Profile
       </NavLink>
 
+      <NavLink to="/account-balance" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+        💰 Account Balance
+      </NavLink>
+
+      <NavLink to="/transfer" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+        💸 Money Transfer
+      </NavLink>
+
+      <NavLink to="/transactions" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+        📜 Transaction History
+      </NavLink>
+
       <div style={{ marginTop: 'auto' }}>
         <div
           style={{
