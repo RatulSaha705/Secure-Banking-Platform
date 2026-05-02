@@ -19,6 +19,10 @@ const Sidebar = () => {
         📊 Dashboard
       </NavLink>
 
+      <NavLink to="/profile" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+        👤 My Profile
+      </NavLink>
+
       <div style={{ marginTop: 'auto' }}>
         <div
           style={{

@@ -26,6 +26,7 @@ const morgan   = require('morgan');
 
 const connectDB      = require('./config/db');
 const authRoutes     = require('./routes/authRoutes');
+const profileRoutes  = require('./routes/profileRoutes');
 const rateLimiter    = require('./middleware/rateLimiter');
 const logger         = require('./utils/logger');
 const { notFoundHandler, globalErrorHandler } = require('./middleware/errorMiddleware');
@@ -63,6 +64,7 @@ app.use('/api/', rateLimiter);
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/keys', keyRoutes);
+app.use('/api/profile', profileRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {

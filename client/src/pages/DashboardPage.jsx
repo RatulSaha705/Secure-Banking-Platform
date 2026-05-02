@@ -45,8 +45,8 @@ const DashboardPage = () => {
     {
       title: 'Profile Management',
       description: 'View and update encrypted personal information.',
-      badge: 'Planned',
-      path: null,
+      badge: 'Live',
+      path: '/profile',
     },
     {
       title: 'Account Details',
@@ -330,7 +330,13 @@ const DashboardPage = () => {
                         </p>
                       </div>
 
-                      <span className="shrink-0 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
+                      <span
+                        className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                          module.badge === 'Live'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-amber-100 text-amber-700'
+                        }`}
+                      >
                         {module.badge}
                       </span>
                     </div>
