@@ -34,6 +34,19 @@ const ADMIN_FORM_INITIAL = {
     body: '',
   };
 
+const deepSelectStyle = {
+  color: '#0f172a',
+  backgroundColor: '#ffffff',
+  fontWeight: '700',
+};
+
+const deepOptionStyle = {
+  color: '#0f172a',
+  backgroundColor: '#ffffff',
+  fontWeight: '700',
+};
+
+
 const getApiError = (err, fallback) => {
   return err?.response?.data?.message || err?.message || fallback;
 };
@@ -218,19 +231,24 @@ const AdminSendNotificationForm = ({
           <select
             value={form.type}
             onChange={(e) =>
-              setForm((prev) => ({
+                setForm((prev) => ({
                 ...prev,
                 type: e.target.value,
-              }))
+                }))
             }
-            className="w-full rounded-xl border border-gray-300 px-4 py-3"
-          >
+            style={deepSelectStyle}
+            className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+            >
             {TYPE_OPTIONS.filter((item) => item.value).map((item) => (
-              <option key={item.value} value={item.value}>
+                <option
+                key={item.value}
+                value={item.value}
+                style={deepOptionStyle}
+                >
                 {item.label}
-              </option>
+                </option>
             ))}
-          </select>
+            </select>
         </div>
 
         <div>
@@ -437,13 +455,14 @@ const NotificationsPage = () => {
         </div>
 
         <div className="mb-6 grid gap-4 md:grid-cols-2">
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="rounded-xl border border-gray-300 px-4 py-3"
-          >
+        <select
+        value={typeFilter}
+        onChange={(e) => setTypeFilter(e.target.value)}
+        style={deepSelectStyle}
+        className="rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+        >
             {TYPE_OPTIONS.map((item) => (
-              <option key={item.label} value={item.value}>
+              <option key={item.label} value={item.value} style={deepOptionStyle}>
                 {item.label}
               </option>
             ))}
@@ -452,10 +471,11 @@ const NotificationsPage = () => {
           <select
             value={readFilter}
             onChange={(e) => setReadFilter(e.target.value)}
-            className="rounded-xl border border-gray-300 px-4 py-3"
-          >
+            style={deepSelectStyle}
+            className="rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+            >
             {READ_OPTIONS.map((item) => (
-              <option key={item.label} value={item.value}>
+              <option key={item.label} value={item.value} style={deepOptionStyle}>
                 {item.label}
               </option>
             ))}

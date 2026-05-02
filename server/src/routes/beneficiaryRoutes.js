@@ -4,18 +4,15 @@
  * server/src/routes/beneficiaryRoutes.js
  *
  * Feature 11 — Beneficiary Management routes.
- * Mount point (app.js): /api/beneficiary
  *
- *   GET    /api/beneficiary        – List my beneficiaries
- *   POST   /api/beneficiary        – Add a beneficiary (max 5)
- *   PATCH  /api/beneficiary/:id    – Update name / nickname / contact
- *   DELETE /api/beneficiary/:id    – Remove a beneficiary
- *
- * All routes require a valid Bearer access token (requireAuth).
+ * RBAC:
+ *   Regular users can manage their own beneficiaries.
+ *   Admins are blocked from user beneficiary operations.
  */
 
 const express = require('express');
-const router  = express.Router();
+
+const router = express.Router();
 
 const {
   listHandler,
@@ -24,11 +21,17 @@ const {
   deleteHandler,
 } = require('../controllers/beneficiaryController');
 
-const { requireAuth } = require('../middleware/authMiddleware');
+const {
+  requireAuth,
+  requireUser,
+} = require('../middleware/authMiddleware');
 
-router.get   ('/',    requireAuth, listHandler);
-router.post  ('/',    requireAuth, addHandler);
-router.patch ('/:id', requireAuth, updateHandler);
-router.delete('/:id', requireAuth, deleteHandler);
+router.use(requireAuth);
+router.use(requireUser);
+
+router.get('/', listHandler);
+router.post('/', addHandler);
+router.patch('/:id', updateHandler);
+router.delete('/:id', deleteHandler);
 
 module.exports = router;

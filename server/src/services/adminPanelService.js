@@ -5,25 +5,21 @@
  *
  * Feature 15 — Admin Panel.
  *
- * Admin capabilities:
- *   - View admin overview/summary.
- *   - Manage users.
- *   - Ban/unban users.
- *   - Promote/demote user roles.
- *   - Monitor transactions.
- *   - Review/manage support tickets.
- *
- * Security pattern:
- *   - All routes using this service must be protected by requireAuth + requireAdmin.
- *   - User data is decrypted only after admin authorization.
- *   - User updates are encrypted before saving.
- *   - Transaction/ticket records are decrypted through the existing storage layer.
- *   - No sensitive plaintext is directly stored.
+ * Fix:
+ *   - Restores controller-required function names:
+ *       listUsersForAdmin
+ *       listTransactionsForAdmin
+ *       banUserForAdmin
+ *       unbanUserForAdmin
+ *       updateUserRoleForAdmin
+ *   - Adds accountNumber in admin user list.
+ *   - Keeps encrypted storage pattern.
  */
 
 const mongoose = require('mongoose');
 
 const User = require('../models/User');
+const Account = require('../models/Account');
 const Transaction = require('../models/Transaction');
 
 const { ROLES, normalizeRole } = require('../constants/roles');
@@ -36,22 +32,7 @@ const {
   manageSupportTicketAsAdmin,
 } = require('./supportTicketService');
 
-const {
-  createNotification,
-} = require('./notificationService');
-
-const USER_STATUS = Object.freeze({
-  ACTIVE: true,
-  BANNED: false,
-});
-
-const userCtx = (userId) => {
-  return buildSecCtx('users', userId, userId);
-};
-
-const transactionCtx = (userId, transactionId) => {
-  return buildSecCtx('transactions', userId, transactionId);
-};
+const { createNotification } = require('./notificationService');
 
 const cleanText = (value) => {
   return String(value || '').trim();
@@ -62,18 +43,6 @@ const assertValidObjectId = (value, label) => {
 
   if (!clean || !mongoose.Types.ObjectId.isValid(clean)) {
     const err = new Error(`Invalid ${label}`);
-    err.statusCode = 400;
-    throw err;
-  }
-
-  return clean;
-};
-
-const normalizeRoleForUpdate = (role) => {
-  const clean = cleanText(role).toUpperCase();
-
-  if (clean !== ROLES.USER && clean !== ROLES.ADMIN) {
-    const err = new Error('Invalid role. Allowed roles: USER, ADMIN');
     err.statusCode = 400;
     throw err;
   }
@@ -101,6 +70,18 @@ const parseBooleanFilter = (value) => {
   throw err;
 };
 
+const normalizeRoleForUpdate = (role) => {
+  const clean = normalizeRole(role);
+
+  if (clean !== ROLES.USER && clean !== ROLES.ADMIN) {
+    const err = new Error('Invalid role. Allowed roles: USER, ADMIN');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return clean;
+};
+
 const parsePagination = (query = {}) => {
   const rawPage = parseInt(query.page, 10);
   const rawLimit = parseInt(query.limit, 10);
@@ -126,6 +107,18 @@ const paginate = (items, query = {}) => {
   };
 };
 
+const userCtx = (userId) => {
+  return buildSecCtx('users', userId, userId);
+};
+
+const accountCtx = (userId, accountId) => {
+  return buildSecCtx('accounts', userId, accountId);
+};
+
+const transactionCtx = (userId, transactionId) => {
+  return buildSecCtx('transactions', userId, transactionId);
+};
+
 const getOwnerIdFromEncryptedField = (field) => {
   if (!field || typeof field !== 'object') {
     return '';
@@ -146,34 +139,58 @@ const getOwnerIdFromEncryptedField = (field) => {
   return '';
 };
 
-const getOwnerIdFromEncryptedDocument = (enc) => {
-  if (!enc || typeof enc !== 'object') {
-    return '';
-  }
-
-  const preferredFields = [
-    'userId',
-    'ownerUserId',
-    'fromUserId',
-    'senderUserId',
-    'accountOwnerId',
+const getAccountOwnerIdFromEnvelope = (enc) => {
+  const fields = [
+    enc?.userId,
+    enc?.ownerUserId,
+    enc?.accountOwnerId,
   ];
 
-  for (const fieldName of preferredFields) {
-    const found = getOwnerIdFromEncryptedField(enc[fieldName]);
+  for (const field of fields) {
+    const owner = getOwnerIdFromEncryptedField(field);
 
-    if (found) {
-      return found;
+    if (owner) {
+      return owner;
     }
   }
 
-  const values = Object.values(enc);
+  const values = Object.values(enc || {});
 
   for (const value of values) {
-    const found = getOwnerIdFromEncryptedField(value);
+    const owner = getOwnerIdFromEncryptedField(value);
 
-    if (found) {
-      return found;
+    if (owner) {
+      return owner;
+    }
+  }
+
+  return '';
+};
+
+const getTransactionOwnerIdFromEnvelope = (enc) => {
+  const fields = [
+    enc?.userId,
+    enc?.ownerUserId,
+    enc?.fromUserId,
+    enc?.senderUserId,
+    enc?.transactionOwnerId,
+  ];
+
+  for (const field of fields) {
+    const owner = getOwnerIdFromEncryptedField(field);
+
+    if (owner) {
+      return owner;
+    }
+  }
+
+  const values = Object.values(enc || {});
+
+  for (const value of values) {
+    const owner = getOwnerIdFromEncryptedField(value);
+
+    if (owner) {
+      return owner;
     }
   }
 
@@ -195,18 +212,40 @@ const decryptUserDocument = async (enc) => {
   return dec;
 };
 
+const decryptAccountDocument = async (enc) => {
+  if (!enc) {
+    return null;
+  }
+
+  const accountId = toIdString(enc._id);
+  const ownerUserId = getAccountOwnerIdFromEnvelope(enc);
+
+  if (!ownerUserId) {
+    return null;
+  }
+
+  const dec = await decryptSensitiveFields(
+    'ACCOUNT',
+    enc,
+    accountCtx(ownerUserId, accountId)
+  );
+
+  dec._id = accountId;
+  dec.id = accountId;
+
+  return dec;
+};
+
 const decryptTransactionDocument = async (enc) => {
   if (!enc) {
     return null;
   }
 
   const transactionId = toIdString(enc._id);
-  const ownerUserId = getOwnerIdFromEncryptedDocument(enc);
+  const ownerUserId = getTransactionOwnerIdFromEnvelope(enc);
 
   if (!ownerUserId) {
-    const err = new Error('Transaction owner metadata is missing');
-    err.statusCode = 409;
-    throw err;
+    return null;
   }
 
   const dec = await decryptSensitiveFields(
@@ -221,8 +260,43 @@ const decryptTransactionDocument = async (enc) => {
   return dec;
 };
 
-const toPublicUser = (user) => {
-  const publicRole = normalizeRole(user.role || ROLES.USER);
+const buildUserAccountNumberMap = async () => {
+  const accounts = await Account.find({}).lean();
+  const map = new Map();
+
+  for (const enc of accounts) {
+    try {
+      const dec = await decryptAccountDocument(enc);
+
+      if (!dec) {
+        continue;
+      }
+
+      const ownerUserId =
+        dec.userId ||
+        dec.ownerUserId ||
+        dec.accountOwnerId ||
+        getAccountOwnerIdFromEnvelope(enc);
+
+      const accountNumber =
+        dec.accountNumber ||
+        dec.number ||
+        dec.accountNo ||
+        '';
+
+      if (ownerUserId && accountNumber && !map.has(String(ownerUserId))) {
+        map.set(String(ownerUserId), String(accountNumber));
+      }
+    } catch {
+      // Skip tampered or undecryptable account.
+    }
+  }
+
+  return map;
+};
+
+const toPublicUser = (user, accountNumber = '') => {
+  const role = normalizeRole(user.role || ROLES.USER);
 
   return {
     id: user.id || user._id,
@@ -231,9 +305,10 @@ const toPublicUser = (user) => {
     contact: user.contact || user.phone || '',
     phone: user.phone || user.contact || '',
     fullName: user.fullName || user.name || user.username || '',
-    role: publicRole,
-    isActive: user.isActive !== false,
+    role,
+    isActive: user.isActive === true,
     twoStepVerificationEnabled: user.twoStepVerificationEnabled === true,
+    accountNumber: accountNumber || 'Not available',
     createdAt: user.createdAt || null,
     updatedAt: user.updatedAt || null,
     lastLoginAt: user.lastLoginAt || null,
@@ -246,12 +321,12 @@ const toPublicTransaction = (txn) => {
     userId: txn.userId || txn.ownerUserId || txn.fromUserId || null,
     transactionType: txn.transactionType || txn.type || '',
     type: txn.type || txn.transactionType || '',
-    amount: txn.amount || 0,
+    amount: Number(txn.amount || 0),
     currency: txn.currency || 'BDT',
     fromAccount: txn.fromAccount || txn.fromAccountNumber || '',
     toAccount: txn.toAccount || txn.toAccountNumber || '',
     beneficiaryName: txn.beneficiaryName || '',
-    status: txn.status || '',
+    status: txn.status || 'UNKNOWN',
     reference: txn.reference || txn.transactionReference || '',
     description: txn.description || txn.note || '',
     createdAt: txn.createdAt || null,
@@ -261,6 +336,8 @@ const toPublicTransaction = (txn) => {
 
 const scanAllUsers = async () => {
   const all = await User.find({}).lean();
+  const accountNumberMap = await buildUserAccountNumberMap();
+
   const users = [];
   let tamperedCount = 0;
 
@@ -269,7 +346,8 @@ const scanAllUsers = async () => {
       const dec = await decryptUserDocument(enc);
 
       if (dec) {
-        users.push(toPublicUser(dec));
+        const accountNumber = accountNumberMap.get(String(dec.id)) || '';
+        users.push(toPublicUser(dec, accountNumber));
       }
     } catch {
       tamperedCount += 1;
@@ -326,7 +404,10 @@ const findUserByIdForAdmin = async (userId) => {
     throw err;
   }
 
-  return toPublicUser(dec);
+  const accountNumberMap = await buildUserAccountNumberMap();
+  const accountNumber = accountNumberMap.get(cleanUserId) || '';
+
+  return toPublicUser(dec, accountNumber);
 };
 
 const findTransactionByIdForAdmin = async (transactionId) => {
@@ -367,10 +448,29 @@ const notifyUserSafely = async ({ userId, title, message, body }) => {
   }
 };
 
+const countActiveAdmins = async () => {
+  const result = await scanAllUsers();
+
+  return result.users.filter((user) => {
+    return normalizeRole(user.role) === ROLES.ADMIN && user.isActive === true;
+  }).length;
+};
+
 const getAdminOverview = async () => {
   const userResult = await scanAllUsers();
   const transactionResult = await scanAllTransactions();
-  const ticketResult = await getAllSupportTicketsForAdmin({});
+
+  let ticketResult = {
+    tickets: [],
+  };
+
+  try {
+    ticketResult = await getAllSupportTicketsForAdmin({});
+  } catch {
+    ticketResult = {
+      tickets: [],
+    };
+  }
 
   const users = userResult.users;
   const transactions = transactionResult.transactions;
@@ -385,16 +485,12 @@ const getAdminOverview = async () => {
     return status === 'OPEN' || status === 'IN_PROGRESS' || status === 'WAITING_USER';
   });
 
-  const resolvedTickets = tickets.filter((ticket) => {
-    const status = String(ticket.status || '').toUpperCase();
-    return status === 'RESOLVED' || status === 'CLOSED';
-  });
-
   const totalTransferred = transactions.reduce((sum, txn) => {
     const amount = Number(txn.amount || 0);
     return sum + (Number.isFinite(amount) ? amount : 0);
   }, 0);
 
+  users.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   transactions.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   tickets.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
 
@@ -408,7 +504,6 @@ const getAdminOverview = async () => {
       totalTransferred,
       totalSupportTickets: tickets.length,
       openSupportTickets: openTickets.length,
-      resolvedSupportTickets: resolvedTickets.length,
       tamperedUserRecords: userResult.tamperedCount,
       tamperedTransactionRecords: transactionResult.tamperedCount,
     },
@@ -423,7 +518,7 @@ const listUsersForAdmin = async (query = {}) => {
   let users = result.users;
 
   if (query.role) {
-    const role = normalizeRoleForUpdate(query.role);
+    const role = normalizeRole(query.role);
     users = users.filter((user) => normalizeRole(user.role) === role);
   }
 
@@ -443,7 +538,8 @@ const listUsersForAdmin = async (query = {}) => {
         String(user.email || '').toLowerCase().includes(search) ||
         String(user.fullName || '').toLowerCase().includes(search) ||
         String(user.contact || '').toLowerCase().includes(search) ||
-        String(user.phone || '').toLowerCase().includes(search)
+        String(user.phone || '').toLowerCase().includes(search) ||
+        String(user.accountNumber || '').toLowerCase().includes(search)
       );
     });
   }
@@ -470,27 +566,38 @@ const updateUserActiveStatusForAdmin = async ({ adminUserId, targetUserId, isAct
   const cleanAdminId = assertValidObjectId(adminUserId, 'admin user id');
   const cleanTargetUserId = assertValidObjectId(targetUserId, 'target user id');
 
-  if (cleanAdminId === cleanTargetUserId && isActive === false) {
+  const nextActiveState = isActive === true;
+
+  if (cleanAdminId === cleanTargetUserId && nextActiveState === false) {
     const err = new Error('Admin cannot ban their own account');
     err.statusCode = 403;
     throw err;
   }
 
-  await findUserByIdForAdmin(cleanTargetUserId);
+  const existing = await findUserByIdForAdmin(cleanTargetUserId);
+
+  if (
+    normalizeRole(existing.role) === ROLES.ADMIN &&
+    nextActiveState === false
+  ) {
+    const activeAdminCount = await countActiveAdmins();
+
+    if (activeAdminCount <= 1) {
+      const err = new Error('Cannot ban the last active admin');
+      err.statusCode = 400;
+      throw err;
+    }
+  }
 
   const patch = {
-    isActive: isActive === true,
+    isActive: nextActiveState,
     updatedAt: nowIso(),
   };
 
   await User.findByIdAndUpdate(
     cleanTargetUserId,
     {
-      $set: await encryptSensitiveFields(
-        'USER',
-        patch,
-        userCtx(cleanTargetUserId)
-      ),
+      $set: await encryptSensitiveFields('USER', patch, userCtx(cleanTargetUserId)),
     }
   );
 
@@ -513,7 +620,7 @@ const banUserForAdmin = async ({ adminUserId, targetUserId, reason }) => {
   return updateUserActiveStatusForAdmin({
     adminUserId,
     targetUserId,
-    isActive: USER_STATUS.BANNED,
+    isActive: false,
     reason,
   });
 };
@@ -522,7 +629,7 @@ const unbanUserForAdmin = async ({ adminUserId, targetUserId, reason }) => {
   return updateUserActiveStatusForAdmin({
     adminUserId,
     targetUserId,
-    isActive: USER_STATUS.ACTIVE,
+    isActive: true,
     reason,
   });
 };
@@ -538,7 +645,20 @@ const updateUserRoleForAdmin = async ({ adminUserId, targetUserId, role }) => {
     throw err;
   }
 
-  await findUserByIdForAdmin(cleanTargetUserId);
+  const existing = await findUserByIdForAdmin(cleanTargetUserId);
+
+  if (
+    normalizeRole(existing.role) === ROLES.ADMIN &&
+    newRole === ROLES.USER
+  ) {
+    const activeAdminCount = await countActiveAdmins();
+
+    if (activeAdminCount <= 1) {
+      const err = new Error('Cannot demote the last active admin');
+      err.statusCode = 400;
+      throw err;
+    }
+  }
 
   const patch = {
     role: newRole,
@@ -548,11 +668,7 @@ const updateUserRoleForAdmin = async ({ adminUserId, targetUserId, role }) => {
   await User.findByIdAndUpdate(
     cleanTargetUserId,
     {
-      $set: await encryptSensitiveFields(
-        'USER',
-        patch,
-        userCtx(cleanTargetUserId)
-      ),
+      $set: await encryptSensitiveFields('USER', patch, userCtx(cleanTargetUserId)),
     }
   );
 

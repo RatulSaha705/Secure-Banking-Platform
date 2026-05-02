@@ -31,6 +31,18 @@ const ACTIVE_OPTIONS = [
   { value: 'false', label: 'Banned Users' },
 ];
 
+const selectStyle = {
+  color: '#0f172a',
+  backgroundColor: '#ffffff',
+  fontWeight: '700',
+};
+
+const optionStyle = {
+  color: '#0f172a',
+  backgroundColor: '#ffffff',
+  fontWeight: '700',
+};
+
 const normalizeRole = (role) => {
   return String(role || '').trim().toLowerCase();
 };
@@ -248,6 +260,10 @@ const OverviewTab = ({ overview, loading }) => {
 
                   <p className="text-sm text-gray-500">{user.email}</p>
 
+                  <p className="mt-1 text-sm text-gray-600">
+                    Account: {user.accountNumber || 'Not available'}
+                  </p>
+
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Badge className={roleClass(user.role)}>{user.role}</Badge>
                     <Badge className={activeClass(user.isActive)}>
@@ -351,10 +367,12 @@ const UsersTab = ({
     }
   };
 
-  const handleRoleChange = async (user, role) => {
+  const handleRoleToggle = async (user) => {
+    const nextRole = String(user.role || '').toLowerCase() === 'admin' ? 'USER' : 'ADMIN';
+
     try {
-      await updateAdminUserRole(user.id, { role });
-      toast.success('User role updated successfully.');
+      await updateAdminUserRole(user.id, { role: nextRole });
+      toast.success(`User role changed to ${nextRole}.`);
       await onRefresh();
     } catch (err) {
       toast.error(getApiError(err, 'Failed to update user role.'));
@@ -375,7 +393,7 @@ const UsersTab = ({
                 page: 1,
               }))
             }
-            className="rounded-xl border border-gray-300 px-4 py-3"
+            className="rounded-xl border border-gray-300 px-4 py-3 text-slate-900"
             placeholder="Search user"
           />
 
@@ -388,10 +406,11 @@ const UsersTab = ({
                 page: 1,
               }))
             }
-            className="rounded-xl border border-gray-300 px-4 py-3"
+            style={selectStyle}
+            className="rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
           >
             {ROLE_OPTIONS.map((item) => (
-              <option key={item.label} value={item.value}>
+              <option key={item.label} value={item.value} style={optionStyle}>
                 {item.label}
               </option>
             ))}
@@ -406,10 +425,11 @@ const UsersTab = ({
                 page: 1,
               }))
             }
-            className="rounded-xl border border-gray-300 px-4 py-3"
+            style={selectStyle}
+            className="rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
           >
             {ACTIVE_OPTIONS.map((item) => (
-              <option key={item.label} value={item.value}>
+              <option key={item.label} value={item.value} style={optionStyle}>
                 {item.label}
               </option>
             ))}
@@ -437,11 +457,11 @@ const UsersTab = ({
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-600">
                 <tr>
                   <th className="px-5 py-3">User</th>
                   <th className="px-5 py-3">Contact</th>
-                  <th className="px-5 py-3">Role</th>
+                  <th className="px-5 py-3">Account Number</th>
                   <th className="px-5 py-3">Status</th>
                   <th className="px-5 py-3">Created</th>
                   <th className="px-5 py-3">Actions</th>
@@ -457,6 +477,12 @@ const UsersTab = ({
                       </p>
 
                       <p className="text-xs text-gray-400">{shortId(user.id)}</p>
+
+                      <div className="mt-2">
+                        <Badge className={roleClass(user.role)}>
+                          {String(user.role || 'user').toUpperCase()}
+                        </Badge>
+                      </div>
                     </td>
 
                     <td className="px-5 py-4">
@@ -465,14 +491,9 @@ const UsersTab = ({
                     </td>
 
                     <td className="px-5 py-4">
-                      <select
-                        value={String(user.role || 'USER').toUpperCase()}
-                        onChange={(e) => handleRoleChange(user, e.target.value)}
-                        className="rounded-xl border border-gray-300 px-3 py-2"
-                      >
-                        <option value="USER">USER</option>
-                        <option value="ADMIN">ADMIN</option>
-                      </select>
+                      <p className="font-semibold text-gray-900">
+                        {user.accountNumber || 'Not available'}
+                      </p>
                     </td>
 
                     <td className="px-5 py-4">
@@ -486,23 +507,35 @@ const UsersTab = ({
                     </td>
 
                     <td className="px-5 py-4">
-                      {user.isActive ? (
+                      <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => handleBan(user)}
-                          className="rounded-xl bg-red-600 px-4 py-2 font-bold text-white hover:bg-red-700"
+                          onClick={() => handleRoleToggle(user)}
+                          className="rounded-xl bg-indigo-600 px-4 py-2 font-bold text-white hover:bg-indigo-700"
                         >
-                          Ban
+                          {String(user.role || '').toLowerCase() === 'admin'
+                            ? 'Make User'
+                            : 'Make Admin'}
                         </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleUnban(user)}
-                          className="rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white hover:bg-emerald-700"
-                        >
-                          Unban
-                        </button>
-                      )}
+
+                        {user.isActive ? (
+                          <button
+                            type="button"
+                            onClick={() => handleBan(user)}
+                            className="rounded-xl bg-red-600 px-4 py-2 font-bold text-white hover:bg-red-700"
+                          >
+                            Ban
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleUnban(user)}
+                            className="rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white hover:bg-emerald-700"
+                          >
+                            Unban
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -571,7 +604,7 @@ const TransactionsTab = ({
                 page: 1,
               }))
             }
-            className="rounded-xl border border-gray-300 px-4 py-3"
+            className="rounded-xl border border-gray-300 px-4 py-3 text-slate-900"
             placeholder="Search transaction"
           />
 
@@ -585,7 +618,7 @@ const TransactionsTab = ({
                 page: 1,
               }))
             }
-            className="rounded-xl border border-gray-300 px-4 py-3"
+            className="rounded-xl border border-gray-300 px-4 py-3 text-slate-900"
             placeholder="Filter by user id"
           />
 
@@ -599,7 +632,7 @@ const TransactionsTab = ({
                 page: 1,
               }))
             }
-            className="rounded-xl border border-gray-300 px-4 py-3"
+            className="rounded-xl border border-gray-300 px-4 py-3 text-slate-900"
             placeholder="Status"
           />
         </div>
