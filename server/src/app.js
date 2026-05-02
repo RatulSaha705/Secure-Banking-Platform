@@ -42,6 +42,7 @@ const profileRoutes = require('./routes/profileRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const accountRoutes = require('./routes/accountRoutes');
 const transferRoutes = require('./routes/transferRoutes');
+const beneficiaryRoutes = require('./routes/beneficiaryRoutes');
 const rateLimiter = require('./middleware/rateLimiter');
 const logger = require('./utils/logger');
 const { notFoundHandler, globalErrorHandler } = require('./middleware/errorMiddleware');

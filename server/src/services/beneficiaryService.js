@@ -5,35 +5,21 @@
  *
  * Feature 11 — Beneficiary Management.
  *
- * Public API
- * ──────────
- *   getMyBeneficiaries   – List all beneficiaries for a user (decrypted).
- *   addBeneficiary       – Add a new beneficiary; enforces 5-entry cap per user.
- *   updateBeneficiary    – Update name / nickname / phone / email fields.
- *   deleteBeneficiary    – Remove a beneficiary by id (ownership-checked).
+ * getMyBeneficiaries  – List all beneficiaries for a user (decrypted, newest-first).
+ * addBeneficiary      – Add; enforces 5-entry cap + duplicate-account check.
+ * updateBeneficiary   – Update name / nickname / phone / email / bankName.
+ * deleteBeneficiary   – Remove (ownership-checked).
  *
- * Security guarantees
- * ───────────────────
- *   • All fields encrypted with encryptSensitiveFields('BENEFICIARY', …) before write.
- *   • HMAC-SHA256 MAC auto-attached by the storage layer on every field.
- *   • Ownership verified on every read and mutating operation: only the
- *     authenticated user's beneficiaries are ever returned or modified.
- *   • Scan-and-decrypt pattern (same as accountService / profileService).
- *     Production would use a lookup-hash index on userId.
- *
- * Limit
- * ─────
- *   MAX_BENEFICIARIES = 5  (enforced in addBeneficiary)
+ * Security: All fields encrypted (dual-asymmetric RSA+ECC) before write.
+ * HMAC-SHA256 MAC auto-attached by storage layer on every field.
  */
 
 const mongoose = require('mongoose');
 
 const Beneficiary = require('../models/Beneficiary');
 
-const {
-  encryptSensitiveFields,
-  decryptSensitiveFields,
-} = require('../security/storage');
+const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/storage');
+const { nowIso, toIdString, buildSecCtx } = require('../utils/serviceHelpers');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -41,38 +27,26 @@ const MAX_BENEFICIARIES = 5;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const nowIso = () => new Date().toISOString();
+const benefCtx = (userId, docId) => buildSecCtx('beneficiaries', userId, docId);
 
-const toStr = (v) => {
-  if (!v) return '';
-  if (typeof v === 'object') return String(v._id || v.id || '');
-  return String(v);
+const normalise = (s) => String(s || '').replace(/\s+/g, '').toUpperCase();
+
+const assertValidId = (userId) => {
+  const clean = String(userId || '').trim();
+  if (!clean || !mongoose.Types.ObjectId.isValid(clean)) {
+    const err = new Error('Invalid user id'); err.statusCode = 400; throw err;
+  }
+  return clean;
 };
 
-const buildCtx = (userId, docId) => ({
-  ownerId:        String(userId),
-  documentId:     String(docId),
-  collectionName: 'beneficiaries',
-});
-
-// ── Decrypt a single raw Beneficiary document ─────────────────────────────────
-
-const decryptBeneficiary = async (encDoc, userId) => {
-  if (!encDoc) return null;
-  const docId = toStr(encDoc._id);
-
-  const dec = await decryptSensitiveFields(
-    'BENEFICIARY',
-    encDoc,
-    buildCtx(userId, docId)
-  );
-
+const decryptBeneficiary = async (enc, userId) => {
+  if (!enc) return null;
+  const docId = toIdString(enc._id);
+  const dec   = await decryptSensitiveFields('BENEFICIARY', enc, benefCtx(userId, docId));
   dec._id = docId;
   dec.id  = docId;
   return dec;
 };
-
-// ── Safe public shape ─────────────────────────────────────────────────────────
 
 const toPublic = (dec) => ({
   id:                       dec.id || dec._id,
@@ -86,106 +60,56 @@ const toPublic = (dec) => ({
   updatedAt:                dec.updatedAt                ?? null,
 });
 
-// ── Validate user id helper ───────────────────────────────────────────────────
-
-const assertValidUserId = (userId) => {
-  const clean = String(userId || '').trim();
-  if (!clean || !mongoose.Types.ObjectId.isValid(clean)) {
-    const err = new Error('Invalid user id');
-    err.statusCode = 400;
-    throw err;
-  }
-  return clean;
-};
-
-// ── Scan all beneficiaries and return those owned by userId ───────────────────
+// ── Scan-and-decrypt (fast-path using ownerUserId in the encrypted envelope) ───
 
 const scanBeneficiariesForUser = async (userId) => {
-  const allEnc = await Beneficiary.find({}).lean();
-  const mine   = [];
+  const all  = await Beneficiary.find({}).lean();
+  const mine = [];
 
-  for (const encDoc of allEnc) {
-    // Fast-path: read the ownerUserId embedded in the first encrypted envelope.
-    const firstField = encDoc.userId;
+  for (const enc of all) {
+    // Fast-path: read ownerUserId embedded in the envelope metadata so we can
+    // skip documents that obviously belong to a different user before decrypting.
+    const ff = enc.userId;
     let ownerId = '';
-    if (firstField?.ownerUserId)          ownerId = String(firstField.ownerUserId);
-    else if (firstField?.metadata?.ownerId) ownerId = String(firstField.metadata.ownerId);
-
+    if (ff?.ownerUserId)          ownerId = String(ff.ownerUserId);
+    else if (ff?.metadata?.ownerId) ownerId = String(ff.metadata.ownerId);
     if (ownerId !== userId) continue;
 
     let dec;
-    try {
-      dec = await decryptBeneficiary(encDoc, userId);
-    } catch (_err) {
-      continue;
-    }
-
-    if (String(dec.userId) === userId) {
-      mine.push({ raw: encDoc, dec });
-    }
+    try { dec = await decryptBeneficiary(enc, userId); } catch { continue; }
+    if (String(dec.userId) === userId) mine.push({ raw: enc, dec });
   }
-
   return mine;
 };
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/**
- * getMyBeneficiaries
- *
- * Returns all decrypted beneficiaries for the authenticated user, sorted
- * newest-first.
- *
- * @param {string} userId
- * @returns {{ beneficiaries: object[], count: number, limit: number }}
- */
 const getMyBeneficiaries = async (userId) => {
-  const clean = assertValidUserId(userId);
+  const clean = assertValidId(userId);
   const mine  = await scanBeneficiariesForUser(clean);
-
-  const list = mine
+  const list  = mine
     .map(({ dec }) => toPublic(dec))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
   return { beneficiaries: list, count: list.length, limit: MAX_BENEFICIARIES };
 };
 
-/**
- * addBeneficiary
- *
- * Adds a beneficiary for the user, enforcing the 5-entry cap.
- * Duplicate account numbers (already saved) are rejected.
- *
- * @param {string} userId
- * @param {object} payload – { beneficiaryName, beneficiaryAccountNumber, nickname?, beneficiaryBankName?, beneficiaryEmail?, beneficiaryPhone? }
- */
 const addBeneficiary = async (userId, payload) => {
-  const clean = assertValidUserId(userId);
-
+  const clean = assertValidId(userId);
   const {
     beneficiaryName,
     beneficiaryAccountNumber,
-    nickname          = null,
+    nickname           = null,
     beneficiaryBankName = null,
-    beneficiaryEmail  = null,
-    beneficiaryPhone  = null,
+    beneficiaryEmail   = null,
+    beneficiaryPhone   = null,
   } = payload || {};
 
-  // ── Input validation ──────────────────────────────────────────────────────
-
   if (!beneficiaryName || !String(beneficiaryName).trim()) {
-    const err = new Error('Beneficiary name is required');
-    err.statusCode = 400;
-    throw err;
+    const err = new Error('Beneficiary name is required'); err.statusCode = 400; throw err;
   }
-
   if (!beneficiaryAccountNumber || !String(beneficiaryAccountNumber).trim()) {
-    const err = new Error('Beneficiary account number is required');
-    err.statusCode = 400;
-    throw err;
+    const err = new Error('Beneficiary account number is required'); err.statusCode = 400; throw err;
   }
-
-  // ── Check cap and duplicates ──────────────────────────────────────────────
 
   const mine = await scanBeneficiariesForUser(clean);
 
@@ -193,26 +117,15 @@ const addBeneficiary = async (userId, payload) => {
     const err = new Error(
       `You can save a maximum of ${MAX_BENEFICIARIES} beneficiaries. Please remove one before adding another.`
     );
-    err.statusCode = 422;
-    throw err;
+    err.statusCode = 422; throw err;
   }
 
-  const normalise = (s) => String(s || '').replace(/\s+/g, '').toUpperCase();
-
-  const duplicate = mine.find(
-    ({ dec }) =>
-      normalise(dec.beneficiaryAccountNumber) === normalise(beneficiaryAccountNumber)
-  );
-
-  if (duplicate) {
+  if (mine.find(({ dec }) => normalise(dec.beneficiaryAccountNumber) === normalise(beneficiaryAccountNumber))) {
     const err = new Error('This account number is already saved as a beneficiary');
-    err.statusCode = 409;
-    throw err;
+    err.statusCode = 409; throw err;
   }
 
-  // ── Encrypt and save ──────────────────────────────────────────────────────
-
-  const docId    = new mongoose.Types.ObjectId().toString();
+  const docId     = new mongoose.Types.ObjectId().toString();
   const timestamp = nowIso();
 
   const plain = {
@@ -228,63 +141,33 @@ const addBeneficiary = async (userId, payload) => {
     updatedAt:                timestamp,
   };
 
-  const encrypted = await encryptSensitiveFields(
-    'BENEFICIARY',
-    plain,
-    buildCtx(clean, docId)
+  const saved = await Beneficiary.create(
+    await encryptSensitiveFields('BENEFICIARY', plain, benefCtx(clean, docId))
   );
-
-  const saved = await Beneficiary.create(encrypted);
-  const dec   = await decryptBeneficiary(saved.toObject(), clean);
-
-  return toPublic(dec);
+  return toPublic(await decryptBeneficiary(saved.toObject(), clean));
 };
 
-/**
- * updateBeneficiary
- *
- * Updates editable fields: beneficiaryName, nickname, beneficiaryPhone,
- * beneficiaryEmail, beneficiaryBankName.
- *
- * @param {string} userId
- * @param {string} beneficiaryId
- * @param {object} updates
- */
 const updateBeneficiary = async (userId, beneficiaryId, updates) => {
-  const clean   = assertValidUserId(userId);
+  const clean   = assertValidId(userId);
   const cleanId = String(beneficiaryId || '').trim();
 
   if (!cleanId || !mongoose.Types.ObjectId.isValid(cleanId)) {
-    const err = new Error('Invalid beneficiary id');
-    err.statusCode = 400;
-    throw err;
+    const err = new Error('Invalid beneficiary id'); err.statusCode = 400; throw err;
   }
 
-  // Find and ownership-check.
-  const encDoc = await Beneficiary.findById(cleanId).lean();
-  if (!encDoc) {
-    const err = new Error('Beneficiary not found');
-    err.statusCode = 404;
-    throw err;
-  }
+  const enc = await Beneficiary.findById(cleanId).lean();
+  if (!enc) { const err = new Error('Beneficiary not found'); err.statusCode = 404; throw err; }
 
   let dec;
-  try {
-    dec = await decryptBeneficiary(encDoc, clean);
-  } catch (_err) {
-    const err = new Error('Beneficiary not found');
-    err.statusCode = 404;
-    throw err;
+  try { dec = await decryptBeneficiary(enc, clean); } catch {
+    const err = new Error('Beneficiary not found'); err.statusCode = 404; throw err;
   }
 
   if (String(dec.userId) !== clean) {
-    const err = new Error('Access denied');
-    err.statusCode = 403;
-    throw err;
+    const err = new Error('Access denied'); err.statusCode = 403; throw err;
   }
 
-  // Build updated plain object (only allowed editable fields).
-  const updatedPlain = {
+  const updatedFields = {
     beneficiaryName:     updates.beneficiaryName     ?? dec.beneficiaryName,
     nickname:            updates.nickname            ?? dec.nickname,
     beneficiaryPhone:    updates.beneficiaryPhone    ?? dec.beneficiaryPhone,
@@ -293,58 +176,33 @@ const updateBeneficiary = async (userId, beneficiaryId, updates) => {
     updatedAt:           nowIso(),
   };
 
-  const encPartial = await encryptSensitiveFields(
-    'BENEFICIARY',
-    updatedPlain,
-    buildCtx(clean, cleanId)
+  await Beneficiary.findByIdAndUpdate(
+    cleanId,
+    { $set: await encryptSensitiveFields('BENEFICIARY', updatedFields, benefCtx(clean, cleanId)) }
   );
 
-  await Beneficiary.findByIdAndUpdate(cleanId, { $set: encPartial });
-
-  // Return fresh decrypted view.
   const refreshed = await Beneficiary.findById(cleanId).lean();
-  const decRefresh = await decryptBeneficiary(refreshed, clean);
-  return toPublic(decRefresh);
+  return toPublic(await decryptBeneficiary(refreshed, clean));
 };
 
-/**
- * deleteBeneficiary
- *
- * Removes a beneficiary (ownership-checked).
- *
- * @param {string} userId
- * @param {string} beneficiaryId
- */
 const deleteBeneficiary = async (userId, beneficiaryId) => {
-  const clean   = assertValidUserId(userId);
+  const clean   = assertValidId(userId);
   const cleanId = String(beneficiaryId || '').trim();
 
   if (!cleanId || !mongoose.Types.ObjectId.isValid(cleanId)) {
-    const err = new Error('Invalid beneficiary id');
-    err.statusCode = 400;
-    throw err;
+    const err = new Error('Invalid beneficiary id'); err.statusCode = 400; throw err;
   }
 
-  const encDoc = await Beneficiary.findById(cleanId).lean();
-  if (!encDoc) {
-    const err = new Error('Beneficiary not found');
-    err.statusCode = 404;
-    throw err;
-  }
+  const enc = await Beneficiary.findById(cleanId).lean();
+  if (!enc) { const err = new Error('Beneficiary not found'); err.statusCode = 404; throw err; }
 
   let dec;
-  try {
-    dec = await decryptBeneficiary(encDoc, clean);
-  } catch (_err) {
-    const err = new Error('Beneficiary not found');
-    err.statusCode = 404;
-    throw err;
+  try { dec = await decryptBeneficiary(enc, clean); } catch {
+    const err = new Error('Beneficiary not found'); err.statusCode = 404; throw err;
   }
 
   if (String(dec.userId) !== clean) {
-    const err = new Error('Access denied');
-    err.statusCode = 403;
-    throw err;
+    const err = new Error('Access denied'); err.statusCode = 403; throw err;
   }
 
   await Beneficiary.findByIdAndDelete(cleanId);

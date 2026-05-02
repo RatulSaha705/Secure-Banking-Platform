@@ -6,19 +6,11 @@
  * Feature 7 — Account Dashboard.
  *
  * Aggregates data from multiple services into a single response.
+ * Each section is loaded independently inside a try/catch so a module
+ * failure never crashes the whole dashboard — the failed section returns
+ * { available: false, reason: '...' } instead.
  *
- * Design principle
- * ────────────────
- * Each section is loaded independently inside a try/catch so a failure in
- * one section (e.g., the Account module hasn't been implemented yet) never
- * crashes the whole dashboard response. Instead, the failed section is
- * returned as { available: false, reason: '...' }.
- *
- * When a new feature module is implemented, replace the corresponding stub
- * with a real service call — no changes needed in the controller or routes.
- *
- * Endpoints served
- * ────────────────
+ * Endpoints:
  *   GET /api/dashboard/summary        → getUserDashboard()   (any auth user)
  *   GET /api/dashboard/admin/summary  → getAdminDashboard()  (admin only)
  */
@@ -28,328 +20,130 @@ const mongoose = require('mongoose');
 const User    = require('../models/User');
 const Profile = require('../models/Profile');
 
-const { getMyProfile } = require('./profileService');
-const { getAccountBalance } = require('./accountService');
-const { getMyTransactionHistory } = require('./transferService');
-
-const {
-  decryptSensitiveFields,
-} = require('../security/storage');
+const { getMyProfile }             = require('./profileService');
+const { getAccountBalance }        = require('./accountService');
+const { getMyTransactionHistory }  = require('./transferService');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const toIdString = (value) => {
-  if (!value) return '';
-  if (typeof value === 'object') return String(value._id || value.id || '');
-  return String(value);
-};
-
-/**
- * Safe wrapper — runs an async getter and returns { available: false } on
- * any error rather than propagating.
- */
+/** Runs fn(); returns { available: false, reason } on any error. */
 const safeGet = async (label, fn) => {
-  try {
-    return await fn();
-  } catch (err) {
+  try { return await fn(); } catch {
     return { available: false, reason: `${label} module not yet available` };
   }
 };
 
-// ── Profile summary (live) ────────────────────────────────────────────────────
+/** Builds a placeholder for a not-yet-implemented module section. */
+const stub = (reason, extra = {}) => ({ available: false, reason, ...extra });
+
+// ── Section builders ──────────────────────────────────────────────────────────
 
 const getProfileSummary = async (userId) => {
-  const profile = await getMyProfile(userId);
-
+  const p = await getMyProfile(userId);
   return {
-    available:   true,
-    fullName:    profile.fullName  ?? null,
-    username:    profile.username  ?? null,
-    email:       profile.email     ?? null,
-    phone:       profile.phone     ?? null,
-    address:     profile.address   ?? null,
-    profileId:   profile.id        ?? null,
+    available: true,
+    fullName:  p.fullName  ?? null,
+    username:  p.username  ?? null,
+    email:     p.email     ?? null,
+    phone:     p.phone     ?? null,
+    address:   p.address   ?? null,
+    profileId: p.id        ?? null,
   };
 };
-
-// ── Account summary (live — Feature 8) ──────────────────────────────────────
 
 const getAccountSummary = async (userId) => {
-  const balance = await getAccountBalance(userId);
-
+  const b = await getAccountBalance(userId);
   return {
     available:        true,
-    totalBalance:     balance.totalBalance,
-    availableBalance: balance.availableBalance,
-    pendingAmount:    balance.pendingAmount,
-    accountNumber:    balance.accountNumber,
-    accountType:      balance.accountType,
-    accountStatus:    balance.accountStatus,
-    branchName:       balance.branchName,
-    asOf:             balance.asOf,
+    totalBalance:     b.totalBalance,
+    availableBalance: b.availableBalance,
+    pendingAmount:    b.pendingAmount,
+    accountNumber:    b.accountNumber,
+    accountType:      b.accountType,
+    accountStatus:    b.accountStatus,
+    branchName:       b.branchName,
+    asOf:             b.asOf,
   };
 };
-
-// ── Recent transactions (live — Feature 10) ────────────────────────────────
 
 const getRecentTransactions = async (userId) => {
-  const result = await getMyTransactionHistory(userId, 1, 5);
-  return {
-    available:    true,
-    transactions: result.transactions,
-    totalCount:   result.totalCount,
-  };
+  const r = await getMyTransactionHistory(userId, 1, 5);
+  return { available: true, transactions: r.transactions, totalCount: r.totalCount };
 };
 
-// ── Notification summary (stub — replace when Notification module is built) ───
-
-const getNotificationSummary = async (_userId) => {
-  /**
-   * TODO — Feature 10: Notifications & Alerts
-   * Replace this stub with a real call such as:
-   *   const summary = await notificationService.getUnreadSummary(_userId);
-   *   return { available: true, ...summary };
-   */
-  return {
-    available:    false,
-    reason:       'Notification module not yet implemented',
-    unreadCount:  0,
-    latestAlerts: [],
-  };
-};
-
-// ── Support ticket summary for the user (stub) ────────────────────────────────
-
-const getUserTicketSummary = async (_userId) => {
-  /**
-   * TODO — Feature 11: Support Ticket System
-   * Replace this stub with a real call such as:
-   *   const summary = await ticketService.getUserTicketSummary(_userId);
-   *   return { available: true, ...summary };
-   */
-  return {
-    available:    false,
-    reason:       'Support ticket module not yet implemented',
-    openCount:    0,
-    closedCount:  0,
-    pendingCount: 0,
-    latestTicket: null,
-  };
-};
-
-// ── Admin: user management stats (live) ──────────────────────────────────────
-
-const getAdminUserStats = async () => {
-  // countDocuments works on _id which is always plaintext.
-  const totalUsers  = await User.countDocuments({});
-  const totalProfiles = await Profile.countDocuments({});
-
-  return {
-    available:      true,
-    totalUsers,
-    totalProfiles,
-  };
-};
-
-// ── Admin: open support tickets (stub) ───────────────────────────────────────
-
-const getAdminTicketStats = async () => {
-  /**
-   * TODO — Feature 11: Support Ticket System (Admin side)
-   * Replace this stub with a real call such as:
-   *   return await ticketService.getAdminTicketStats();
-   */
-  return {
-    available:     false,
-    reason:        'Support ticket module not yet implemented',
-    openCount:     0,
-    inProgressCount: 0,
-    resolvedCount: 0,
-    newSinceYesterday: 0,
-  };
-};
-
-// ── Admin: new notification alerts pending action (stub) ────────────────────
-
-const getAdminAlertStats = async () => {
-  /**
-   * TODO — Feature 10: Notifications & Alerts (Admin side)
-   */
-  return {
-    available:           false,
-    reason:              'Notification module not yet implemented',
-    pendingNotifications: 0,
-    criticalAlerts:       0,
-  };
-};
+const getAdminUserStats = async () => ({
+  available:     true,
+  totalUsers:    await User.countDocuments({}),
+  totalProfiles: await Profile.countDocuments({}),
+});
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
  * getUserDashboard
- *
- * Returns an aggregated summary for the authenticated regular user.
- *
- * @param {string} userId – Authenticated user's _id (req.user.id).
- * @returns {object} Dashboard summary payload.
+ * Aggregated summary for an authenticated regular user.
  */
 const getUserDashboard = async (userId) => {
-  const cleanUserId = String(userId || '').trim();
-
-  if (!cleanUserId || !mongoose.Types.ObjectId.isValid(cleanUserId)) {
-    const err = new Error('Invalid user id');
-    err.statusCode = 400;
-    throw err;
+  const clean = String(userId || '').trim();
+  if (!clean || !mongoose.Types.ObjectId.isValid(clean)) {
+    const err = new Error('Invalid user id'); err.statusCode = 400; throw err;
   }
 
-  // All sections loaded in parallel for speed; failures are swallowed by safeGet.
-  const [
-    profile,
-    account,
-    transactions,
-    notifications,
-    tickets,
-  ] = await Promise.all([
-    safeGet('Profile',       () => getProfileSummary(cleanUserId)),
-    safeGet('Account',       () => getAccountSummary(cleanUserId)),
-    safeGet('Transactions',  () => getRecentTransactions(cleanUserId)),
-    safeGet('Notifications', () => getNotificationSummary(cleanUserId)),
-    safeGet('Tickets',       () => getUserTicketSummary(cleanUserId)),
+  const [profile, account, transactions, notifications, tickets] = await Promise.all([
+    safeGet('Profile',       () => getProfileSummary(clean)),
+    safeGet('Account',       () => getAccountSummary(clean)),
+    safeGet('Transactions',  () => getRecentTransactions(clean)),
+    Promise.resolve(stub('Notification module not yet implemented', { unreadCount: 0, latestAlerts: [] })),
+    Promise.resolve(stub('Support ticket module not yet implemented', { openCount: 0, closedCount: 0, pendingCount: 0, latestTicket: null })),
   ]);
 
   return {
-    userId: cleanUserId,
+    userId: clean,
     generatedAt: new Date().toISOString(),
     profile,
     account,
     transactions,
     notifications,
     tickets,
-
-    /**
-     * quickActions — static list of possible actions with an `available` flag.
-     * Set available: true when the corresponding route is implemented.
-     * The frontend uses this to decide whether to render a button as active
-     * or disabled.
-     */
     quickActions: [
-      {
-        id:          'transfer',
-        label:       'Transfer Money',
-        description: 'Send money to a saved beneficiary.',
-        icon:        'transfer',
-        available:   false,
-        path:        null,
-      },
-      {
-        id:          'beneficiaries',
-        label:       'Manage Beneficiaries',
-        description: 'Add, edit, or remove saved accounts.',
-        icon:        'beneficiaries',
-        available:   false,
-        path:        null,
-      },
-      {
-        id:          'history',
-        label:       'Transaction History',
-        description: 'View and filter past transactions.',
-        icon:        'history',
-        available:   false,
-        path:        null,
-      },
-      {
-        id:          'support',
-        label:       'Support Ticket',
-        description: 'Create or track a support request.',
-        icon:        'support',
-        available:   false,
-        path:        null,
-      },
-      {
-        id:          'profile',
-        label:       'My Profile',
-        description: 'View and update personal information.',
-        icon:        'profile',
-        available:   true,
-        path:        '/profile',
-      },
+      { id: 'transfer',      label: 'Transfer Money',        description: 'Send money to a saved beneficiary.',       icon: 'transfer',      available: true,  path: '/transfer' },
+      { id: 'beneficiaries', label: 'Manage Beneficiaries',  description: 'Add, edit, or remove saved accounts.',     icon: 'beneficiaries', available: true,  path: '/transfer' },
+      { id: 'history',       label: 'Transaction History',   description: 'View and filter past transactions.',        icon: 'history',       available: true,  path: '/transactions' },
+      { id: 'support',       label: 'Support Ticket',        description: 'Create or track a support request.',        icon: 'support',       available: false, path: null },
+      { id: 'profile',       label: 'My Profile',            description: 'View and update personal information.',     icon: 'profile',       available: true,  path: '/profile' },
     ],
   };
 };
 
 /**
  * getAdminDashboard
- *
- * Returns an aggregated admin-level summary.
- * Only reachable via admin-guarded routes.
- *
- * @param {string} adminId – Admin's _id (for audit purposes).
- * @returns {object} Admin dashboard summary payload.
+ * Aggregated admin-level summary.
  */
 const getAdminDashboard = async (adminId) => {
-  const cleanAdminId = String(adminId || '').trim();
-
-  if (!cleanAdminId || !mongoose.Types.ObjectId.isValid(cleanAdminId)) {
-    const err = new Error('Invalid admin id');
-    err.statusCode = 400;
-    throw err;
+  const clean = String(adminId || '').trim();
+  if (!clean || !mongoose.Types.ObjectId.isValid(clean)) {
+    const err = new Error('Invalid admin id'); err.statusCode = 400; throw err;
   }
 
-  const [
-    userStats,
-    ticketStats,
-    alertStats,
-  ] = await Promise.all([
-    safeGet('UserStats',   () => getAdminUserStats()),
-    safeGet('TicketStats', () => getAdminTicketStats()),
-    safeGet('AlertStats',  () => getAdminAlertStats()),
+  const [userStats, ticketStats, alertStats] = await Promise.all([
+    safeGet('UserStats',   getAdminUserStats),
+    Promise.resolve(stub('Support ticket module not yet implemented', { openCount: 0, inProgressCount: 0, resolvedCount: 0, newSinceYesterday: 0 })),
+    Promise.resolve(stub('Notification module not yet implemented',   { pendingNotifications: 0, criticalAlerts: 0 })),
   ]);
 
   return {
-    adminId:     cleanAdminId,
+    adminId: clean,
     generatedAt: new Date().toISOString(),
     userStats,
     ticketStats,
     alertStats,
-
-    /**
-     * adminActions — admin-specific quick actions.
-     * Set available: true as each feature is implemented.
-     */
     adminActions: [
-      {
-        id:          'manage-users',
-        label:       'Manage Users',
-        description: 'View, activate, or deactivate user accounts.',
-        available:   false,
-        path:        null,
-      },
-      {
-        id:          'support-tickets',
-        label:       'Support Tickets',
-        description: 'Review and resolve open support tickets.',
-        available:   false,
-        path:        null,
-      },
-      {
-        id:          'send-notification',
-        label:       'Send Notification',
-        description: 'Broadcast alerts or messages to users.',
-        available:   false,
-        path:        null,
-      },
-      {
-        id:          'view-transactions',
-        label:       'Transaction Audit',
-        description: 'Review all system transactions.',
-        available:   false,
-        path:        null,
-      },
+      { id: 'manage-users',     label: 'Manage Users',       description: 'View, activate, or deactivate user accounts.', available: false, path: null },
+      { id: 'support-tickets',  label: 'Support Tickets',    description: 'Review and resolve open support tickets.',      available: false, path: null },
+      { id: 'send-notification',label: 'Send Notification',  description: 'Broadcast alerts or messages to users.',        available: false, path: null },
+      { id: 'view-transactions',label: 'Transaction Audit',  description: 'Review all system transactions.',               available: false, path: null },
     ],
   };
 };
 
-module.exports = {
-  getUserDashboard,
-  getAdminDashboard,
-};
+module.exports = { getUserDashboard, getAdminDashboard };
