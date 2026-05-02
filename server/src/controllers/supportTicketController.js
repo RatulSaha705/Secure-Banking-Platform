@@ -4,6 +4,10 @@
  * server/src/controllers/supportTicketController.js
  *
  * Feature 13 — Support Ticket System HTTP layer.
+ *
+ * Feature 14 integration:
+ *   - Admins get notification when user creates a support ticket.
+ *   - User gets notification when admin resolves a support ticket.
  */
 
 const {
@@ -17,12 +21,19 @@ const {
   manageSupportTicketAsAdmin,
 } = require('../services/supportTicketService');
 
+const {
+  safeCreateSupportTicketCreatedAdminNotification,
+  safeCreateSupportTicketResolvedUserNotification,
+} = require('../services/notificationService');
+
 const logger = require('../utils/logger');
 const { sendError } = require('../utils/controllerHelpers');
 
 const createHandler = async (req, res, next) => {
   try {
     const ticket = await createSupportTicket(req.user.id, req.body);
+
+    await safeCreateSupportTicketCreatedAdminNotification(ticket);
 
     logger.info(`Support ticket created by user ${req.user.id}: ${ticket.id}`);
 
@@ -126,6 +137,10 @@ const adminGetByIdHandler = async (req, res, next) => {
 const adminManageHandler = async (req, res, next) => {
   try {
     const ticket = await manageSupportTicketAsAdmin(req.user.id, req.params.id, req.body);
+
+    if (String(ticket.status || '').toUpperCase() === 'RESOLVED') {
+      await safeCreateSupportTicketResolvedUserNotification(ticket);
+    }
 
     logger.info(`Support ticket ${ticket.id} managed by admin ${req.user.id}`);
 
