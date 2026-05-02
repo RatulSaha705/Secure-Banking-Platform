@@ -101,13 +101,12 @@ const ReceiptModal = ({ receipt, onClose }) => {
         {/* Receipt body */}
         <div className="space-y-3 px-6 py-6">
           {[
-            { label: 'Reference',     value: receipt.reference,     mono: true  },
-            { label: 'Amount',        value: formatCurrency(receipt.amount)      },
-            { label: 'To Account',    value: maskAccountNumber(receipt.toAccount), mono: true },
-            { label: 'Receiver',      value: receipt.receiverName ?? '—'         },
-            { label: 'Bank',          value: receipt.receiverBank  ?? '—'         },
-            { label: 'New Balance',   value: formatCurrency(receipt.newBalance)   },
-            { label: 'Status',        value: <TxnStatusBadge status={receipt.status} /> },
+            { label: 'Reference',   value: receipt.reference,                          mono: true  },
+            { label: 'Amount',      value: formatCurrency(receipt.amount)                           },
+            { label: 'To Account',  value: maskAccountNumber(receipt.toAccount),        mono: true  },
+            { label: 'Receiver',    value: receipt.receiverName ?? '—'                              },
+            { label: 'New Balance', value: formatCurrency(receipt.newBalance)                       },
+            { label: 'Status',      value: <TxnStatusBadge status={receipt.status} />               },
           ].map(({ label, value, mono }) => (
             <div key={label} className="flex items-center justify-between rounded-xl bg-slate-800 px-4 py-2.5">
               <span className="text-xs font-medium text-slate-400">{label}</span>
@@ -131,19 +130,11 @@ const ReceiptModal = ({ receipt, onClose }) => {
   );
 };
 
-/* ── Transfer Form ─────────────────────────────────────────────────────────── */
-const TRANSFER_TYPES = [
-  { value: 'SAME_BANK',  label: '🏦 Same Bank',   hint: 'To another SecureBank account' },
-  { value: 'OTHER_BANK', label: '🏢 Other Bank',  hint: 'External bank transfer'        },
-];
-
 const initForm = () => ({
   toAccountNumber: '',
   amount:          '',
   receiverName:    '',
-  receiverBank:    '',
   description:     '',
-  transferType:    'SAME_BANK',
 });
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -207,9 +198,6 @@ const TransferPage = () => {
     if (balance && amt > balance.availableBalance) {
       errs.amount = `Insufficient balance (available: ${formatCurrency(balance.availableBalance)})`;
     }
-    if (form.transferType === 'OTHER_BANK' && !form.receiverBank.trim()) {
-      errs.receiverBank = 'Bank name is required for external transfers';
-    }
     return errs;
   };
 
@@ -223,10 +211,9 @@ const TransferPage = () => {
       const payload = {
         toAccountNumber: form.toAccountNumber.trim(),
         amount:          Number(form.amount),
-        receiverName:    form.receiverName.trim()  || null,
-        receiverBank:    form.receiverBank.trim()  || null,
-        description:     form.description.trim()   || null,
-        transferType:    form.transferType,
+        receiverName:    form.receiverName.trim() || null,
+        description:     form.description.trim()  || null,
+        transferType:    'SAME_BANK',
       };
 
       const res = await initiateTransfer(payload);
@@ -303,27 +290,6 @@ const TransferPage = () => {
                 </div>
               </div>
 
-              {/* Transfer type selector */}
-              <div className="mb-5 grid grid-cols-2 gap-3">
-                {TRANSFER_TYPES.map((t) => (
-                  <button
-                    key={t.value}
-                    type="button"
-                    id={`btn-transfer-type-${t.value.toLowerCase()}`}
-                    onClick={() => setForm((prev) => ({ ...prev, transferType: t.value }))}
-                    className={`rounded-xl border px-4 py-3 text-left text-sm transition ${
-                      form.transferType === t.value
-                        ? 'border-blue-500 bg-blue-600/20 text-blue-300'
-                        : 'border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-500'
-                    }`}
-                  >
-                    <span className="font-semibold">{t.label}</span>
-                    <br />
-                    <span className="text-xs opacity-75">{t.hint}</span>
-                  </button>
-                ))}
-              </div>
-
               <form id="transfer-form" onSubmit={handleSubmit} noValidate className="space-y-4">
 
                 {/* Recipient account number */}
@@ -382,28 +348,6 @@ const TransferPage = () => {
                     autoComplete="off"
                   />
                 </div>
-
-                {/* Receiver bank — only for OTHER_BANK */}
-                {form.transferType === 'OTHER_BANK' && (
-                  <div>
-                    <label htmlFor="receiverBank" className="form-label">
-                      Receiver Bank Name <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      id="receiverBank"
-                      name="receiverBank"
-                      type="text"
-                      value={form.receiverBank}
-                      onChange={handleChange}
-                      placeholder="e.g. Dutch-Bangla Bank"
-                      className="form-input mt-1"
-                      autoComplete="off"
-                    />
-                    {errors.receiverBank && (
-                      <p className="mt-1 text-xs text-red-400">{errors.receiverBank}</p>
-                    )}
-                  </div>
-                )}
 
                 {/* Description */}
                 <div>
