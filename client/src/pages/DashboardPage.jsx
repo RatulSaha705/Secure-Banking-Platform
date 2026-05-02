@@ -209,7 +209,7 @@ const FEATURE_MODULES = [
     title:       'Transaction History',
     description: 'Check previous transfers and account activity.',
     badge:       'Live',
-    path:        '/transfer',
+    path:        '/transactions',
   },
   {
     title:       'Support Ticket System',
@@ -293,7 +293,7 @@ const DashboardPage = () => {
     description: qa.description,
     icon:        ICON_MAP[qa.id] ?? '⚡',
     path:        qa.id === 'transfer' ? '/transfer'
-               : qa.id === 'history'  ? '/transfer'
+               : qa.id === 'history'  ? '/transactions'
                : qa.available ? qa.path : null,
   }));
 
@@ -587,10 +587,10 @@ const DashboardPage = () => {
 
                   <div className="mt-4">
                     <Link
-                      to="/transfer"
+                      to="/transactions"
                       className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700"
                     >
-                      💸 Transfer Money / View All
+                      📜 View Full History
                     </Link>
                   </div>
                 </div>

@@ -82,8 +82,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/keys', keyRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/account', accountRoutes);
-app.use('/api/transfer', transferRoutes);
+app.use('/api/account',     accountRoutes);
+app.use('/api/transfer',    transferRoutes);
+app.use('/api/beneficiary', beneficiaryRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {

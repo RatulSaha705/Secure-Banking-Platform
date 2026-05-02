@@ -11,6 +11,7 @@ import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
 import AccountBalancePage from './pages/AccountBalancePage';
 import TransferPage from './pages/TransferPage';
+import TransactionHistoryPage from './pages/TransactionHistoryPage';
 
 const App = () => {
   return (
@@ -37,6 +38,7 @@ const App = () => {
             <Route path="/profile"           element={<ProfilePage />} />
             <Route path="/account-balance"   element={<AccountBalancePage />} />
             <Route path="/transfer"          element={<TransferPage />} />
+            <Route path="/transactions"      element={<TransactionHistoryPage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

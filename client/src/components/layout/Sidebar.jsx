@@ -31,6 +31,10 @@ const Sidebar = () => {
         💸 Money Transfer
       </NavLink>
 
+      <NavLink to="/transactions" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+        📜 Transaction History
+      </NavLink>
+
       <div style={{ marginTop: 'auto' }}>
         <div
           style={{
