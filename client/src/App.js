@@ -8,6 +8,7 @@ import PrivateRoute from './components/guards/PrivateRoute';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
+import ProfilePage from './pages/ProfilePage';
 
 const App = () => {
   return (
@@ -31,6 +32,7 @@ const App = () => {
 
           <Route element={<PrivateRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/profile"   element={<ProfilePage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
