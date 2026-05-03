@@ -9,7 +9,7 @@
  *   API responses must never return private keys or .env private-key lines.
  */
 
-const keyService = require('../security/keys/key.service');
+const keyService = require('../security/key-management/key-manager');
 
 const sendSuccess = (res, statusCode, message, data = {}) => {
   return res.status(statusCode).json({

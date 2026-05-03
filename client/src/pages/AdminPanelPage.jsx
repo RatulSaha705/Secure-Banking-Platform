@@ -11,12 +11,14 @@ import {
   unbanAdminUser,
   updateAdminUserRole,
   getAdminTransactions,
+  adminTransferToUser,
 } from '../services/adminPanelService';
 
 const TABS = {
   OVERVIEW: 'OVERVIEW',
   USERS: 'USERS',
   TRANSACTIONS: 'TRANSACTIONS',
+  TRANSFER: 'TRANSFER',
 };
 
 const ROLE_OPTIONS = [
@@ -742,6 +744,157 @@ const TransactionsTab = ({
   );
 };
 
+const AdminTransferTab = () => {
+  const [form, setForm] = React.useState({
+    toAccountNumber: '',
+    amount: '',
+    description: '',
+  });
+  const [submitting, setSubmitting] = React.useState(false);
+  const [lastReceipt, setLastReceipt] = React.useState(null);
+
+  const handleChange = (e) => {
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const amt = Number(form.amount);
+    if (!form.toAccountNumber.trim()) {
+      toast.error('Account number is required.');
+      return;
+    }
+    if (!amt || amt <= 0) {
+      toast.error('Enter a valid positive amount.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await adminTransferToUser({
+        toAccountNumber: form.toAccountNumber.trim(),
+        amount: amt,
+        description: form.description.trim() || 'Admin top-up',
+      });
+      const receipt = res.data?.data || {};
+      setLastReceipt(receipt);
+      toast.success(`BDT ${amt.toLocaleString()} credited successfully! Ref: ${receipt.reference}`);
+      setForm({ toAccountNumber: '', amount: '', description: '' });
+    } catch (err) {
+      toast.error(getApiError(err, 'Transfer failed.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-2xl bg-white p-6 shadow">
+        <div className="mb-5 flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-2xl">
+            💸
+          </div>
+          <div>
+            <h2 className="text-xl font-extrabold text-gray-900">Admin Money Transfer</h2>
+            <p className="text-sm text-gray-500">
+              Credit funds directly to any user account. A CREDIT transaction is recorded and the user is notified.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-bold text-gray-700" htmlFor="admin-to-account">
+              Recipient Account Number
+            </label>
+            <input
+              id="admin-to-account"
+              type="text"
+              name="toAccountNumber"
+              value={form.toAccountNumber}
+              onChange={handleChange}
+              placeholder="e.g. 1234 5678 9012 3456"
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+              disabled={submitting}
+              autoComplete="off"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-bold text-gray-700" htmlFor="admin-amount">
+              Amount (BDT)
+            </label>
+            <input
+              id="admin-amount"
+              type="number"
+              name="amount"
+              value={form.amount}
+              onChange={handleChange}
+              placeholder="Enter amount"
+              min="1"
+              step="any"
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+              disabled={submitting}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-bold text-gray-700" htmlFor="admin-description">
+              Description (optional)
+            </label>
+            <input
+              id="admin-description"
+              type="text"
+              name="description"
+              value={form.description}
+              onChange={handleChange}
+              placeholder="Admin top-up, scholarship credit, etc."
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+              disabled={submitting}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-xl bg-emerald-600 py-3 font-extrabold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {submitting ? 'Processing…' : '💸 Credit Account'}
+          </button>
+        </form>
+      </div>
+
+      {lastReceipt && (
+        <div className="rounded-2xl bg-emerald-50 p-6 shadow">
+          <h3 className="mb-4 text-lg font-extrabold text-emerald-800">✅ Transfer Receipt</h3>
+          <div className="grid gap-3 text-sm md:grid-cols-2">
+            <div className="rounded-xl bg-white p-3 shadow-sm">
+              <p className="font-bold text-gray-500">Reference</p>
+              <p className="mt-1 font-extrabold text-gray-900">{lastReceipt.reference || '—'}</p>
+            </div>
+            <div className="rounded-xl bg-white p-3 shadow-sm">
+              <p className="font-bold text-gray-500">Amount Credited</p>
+              <p className="mt-1 font-extrabold text-emerald-700">{formatMoney(lastReceipt.amount)}</p>
+            </div>
+            <div className="rounded-xl bg-white p-3 shadow-sm">
+              <p className="font-bold text-gray-500">To Account</p>
+              <p className="mt-1 font-extrabold text-gray-900">{lastReceipt.toAccount || '—'}</p>
+            </div>
+            <div className="rounded-xl bg-white p-3 shadow-sm">
+              <p className="font-bold text-gray-500">New Balance</p>
+              <p className="mt-1 font-extrabold text-gray-900">{formatMoney(lastReceipt.newBalance)}</p>
+            </div>
+            <div className="rounded-xl bg-white p-3 shadow-sm md:col-span-2">
+              <p className="font-bold text-gray-500">Completed At</p>
+              <p className="mt-1 text-gray-700">{formatDate(lastReceipt.completedAt)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
 const AdminPanelPage = () => {
   const { currentUser } = useAuth();
   const isAdmin = normalizeRole(currentUser?.role) === 'admin';
@@ -947,6 +1100,13 @@ const AdminPanelPage = () => {
           >
             💸 Transactions
           </TabButton>
+
+          <TabButton
+            active={activeTab === TABS.TRANSFER}
+            onClick={() => setActiveTab(TABS.TRANSFER)}
+          >
+            🏦 Money Transfer
+          </TabButton>
         </div>
 
         {activeTab === TABS.OVERVIEW && (
@@ -974,6 +1134,8 @@ const AdminPanelPage = () => {
             setTransactionFilters={setTransactionFilters}
           />
         )}
+
+        {activeTab === TABS.TRANSFER && <AdminTransferTab />}
       </div>
     </DashboardLayout>
   );

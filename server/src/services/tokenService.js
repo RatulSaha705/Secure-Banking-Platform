@@ -19,8 +19,8 @@ const jwt    = require('jsonwebtoken');
 const RefreshSession = require('../models/RefreshSession');
 const User           = require('../models/User');
 
-const { hmacSha256Hex, timingSafeEqualHex } = require('../security/hash/hmac');
-const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/storage');
+const { createCbcMac, timingSafeEqualHex } = require('../security/data-integrity/cbc-mac-engine');
+const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/secure-storage');
 const { nowIso } = require('../utils/serviceHelpers');
 
 // ── Config helpers ────────────────────────────────────────────────────────────
@@ -100,7 +100,10 @@ const getRefreshTokenFromRequest = (req) =>
 const generateRefreshToken = () => crypto.randomBytes(48).toString('base64url');
 
 const hashRefreshToken = (token) =>
-  hmacSha256Hex(getRefreshSecret(), ['secure-banking-refresh-v1', String(token)].join('|'));
+  createCbcMac(
+    getRefreshSecret(),
+    ['secure-banking-refresh-v1', String(token)]
+  );
 
 const generateAccessToken = ({ id, role, sessionId }) => {
   if (!id || !role || !sessionId) throw new Error('id, role, and sessionId are required for access token');

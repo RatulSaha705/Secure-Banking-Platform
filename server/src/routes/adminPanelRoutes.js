@@ -32,6 +32,8 @@ const {
   listSupportTicketsHandler,
   getSupportTicketHandler,
   manageSupportTicketHandler,
+
+  adminTransferHandler,
 } = require('../controllers/adminPanelController');
 
 const { requireAuth, requireAdmin } = require('../middleware/authMiddleware');
@@ -59,5 +61,8 @@ router.get('/transactions/:transactionId', getTransactionHandler);
 router.get('/support-tickets', listSupportTicketsHandler);
 router.get('/support-tickets/:ticketId', getSupportTicketHandler);
 router.patch('/support-tickets/:ticketId', manageSupportTicketHandler);
+
+// Admin money transfer (top-up a user account)
+router.post('/transfer', adminTransferHandler);
 
 module.exports = router;

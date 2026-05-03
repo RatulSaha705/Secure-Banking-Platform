@@ -21,13 +21,13 @@ const crypto = require('crypto');
 const PendingRegistration = require('../models/PendingRegistration');
 const TwoFactorChallenge = require('../models/TwoFactorChallenge');
 
-const { hmacSha256Hex, timingSafeEqualHex } = require('../security/hash/hmac');
+const { createCbcMac, timingSafeEqualHex } = require('../security/data-integrity/cbc-mac-engine');
 const { sendOtpEmail } = require('./emailService');
 
 const {
   encryptSensitiveFields,
   decryptSensitiveFields,
-} = require('../security/storage');
+} = require('../security/secure-storage');
 
 const OTP_LENGTH = 6;
 const DEFAULT_OTP_TTL_MINUTES = 5;
@@ -107,7 +107,7 @@ const generatePendingRegistrationId = () => {
 };
 
 const hashOtp = ({ purpose, challengeId, subjectId, otp }) => {
-  return hmacSha256Hex(
+  return createCbcMac(
     getOtpSecret(),
     [
       'secure-banking-otp-v1',
@@ -115,7 +115,7 @@ const hashOtp = ({ purpose, challengeId, subjectId, otp }) => {
       String(challengeId),
       String(subjectId),
       String(otp),
-    ].join('|')
+    ]
   );
 };
 

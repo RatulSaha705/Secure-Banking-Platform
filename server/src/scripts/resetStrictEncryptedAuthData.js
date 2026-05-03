@@ -32,7 +32,7 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 
-const { CryptoKey } = require('../security/keys/key.model');
+const { CryptoKey } = require('../security/key-management/crypto-key-schema');
 
 const COLLECTIONS_TO_CLEAR = [
   'users',

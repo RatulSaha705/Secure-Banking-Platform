@@ -17,7 +17,7 @@ const {
   decryptSensitiveFields,
   getPolicySummary,
   verifyStorageMac,
-} = require('../security/storage');
+} = require('../security/secure-storage');
 
 const connectDatabase = async () => {
   if (!process.env.MONGO_URI) {

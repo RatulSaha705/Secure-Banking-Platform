@@ -24,7 +24,7 @@ const mongoose = require('mongoose');
 const Profile = require('../models/Profile');
 const User    = require('../models/User');
 
-const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/storage');
+const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/secure-storage');
 const { nowIso, toIdString, cleanOptional, buildSecCtx } = require('../utils/serviceHelpers');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

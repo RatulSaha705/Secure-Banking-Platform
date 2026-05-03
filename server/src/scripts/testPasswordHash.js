@@ -11,7 +11,7 @@
 const {
   hashPassword,
   comparePassword,
-} = require('../security/password');
+} = require('../security/password-security');
 
 const main = async () => {
   const plainPassword = 'MyStrongPassword123!';

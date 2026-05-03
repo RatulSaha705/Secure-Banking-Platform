@@ -20,7 +20,7 @@ const {
   encryptValue,
   decryptValue,
   getPolicySummary,
-} = require('../security/encryption');
+} = require('../security/field-encryption');
 
 const connectDatabase = async () => {
   if (!process.env.MONGO_URI) {

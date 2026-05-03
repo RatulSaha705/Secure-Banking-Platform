@@ -53,3 +53,7 @@ export const getAdminSupportTicketById = (ticketId) => {
 export const manageAdminSupportTicket = (ticketId, payload) => {
   return api.patch(`/admin/support-tickets/${ticketId}`, payload);
 };
+
+export const adminTransferToUser = (payload) => {
+  return api.post('/admin/transfer', payload);
+};
