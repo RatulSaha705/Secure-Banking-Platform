@@ -14,7 +14,7 @@
 require('dotenv').config();
 
 const mongoose = require('mongoose');
-const { CryptoKey } = require('../security/keys/key.model');
+const { CryptoKey } = require('../security/key-management/crypto-key-schema');
 
 const OLD_INDEX_NAMES = Object.freeze([
   'one_active_key_per_algorithm_purpose',

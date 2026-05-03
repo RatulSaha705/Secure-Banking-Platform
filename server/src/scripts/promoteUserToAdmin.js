@@ -27,7 +27,7 @@ const { assertValidRole } = require('../constants/roles');
 const {
   encryptSensitiveFields,
   decryptSensitiveFields,
-} = require('../security/storage');
+} = require('../security/secure-storage');
 
 const connectDatabase = async () => {
   const mongoUri = process.env.MONGO_URI;

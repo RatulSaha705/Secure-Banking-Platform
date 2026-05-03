@@ -18,7 +18,7 @@ const RefreshSession = require('../models/RefreshSession');
 const User = require('../models/User');
 
 const { verifyAccessToken, revokeSessionById } = require('../services/tokenService');
-const { decryptSensitiveFields } = require('../security/storage');
+const { decryptSensitiveFields } = require('../security/secure-storage');
 const { ROLES, normalizeRole } = require('../constants/roles');
 
 const getBearerToken = (req) => {

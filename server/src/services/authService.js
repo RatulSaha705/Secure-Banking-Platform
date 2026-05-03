@@ -19,11 +19,11 @@ const mongoose = require('mongoose');
 const User                   = require('../models/User');
 const PendingRegistration    = require('../models/PendingRegistration');
 
-const { hashPassword, comparePassword }   = require('../security/password');
+const { hashPassword, comparePassword }   = require('../security/password-security');
 const { computeEmailLookupHash, computeUsernameLookupHash, normalize } = require('./lookupHashService');
 const { createLoginSession }              = require('./tokenService');
-const { ensureUserKeySet }                = require('../security/keys/key.service');
-const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/storage');
+const { ensureUserKeySet }                = require('../security/key-management/key-manager');
+const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/secure-storage');
 const {
   generatePendingRegistrationId,
   createRegistrationOtpChallenge,

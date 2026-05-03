@@ -22,6 +22,8 @@ const {
   listSupportTicketsForAdminPanel,
   getSupportTicketDetailsForAdminPanel,
   manageSupportTicketForAdminPanel,
+
+  adminTransferToUser,
 } = require('../services/adminPanelService');
 
 const logger = require('../utils/logger');
@@ -238,6 +240,23 @@ const manageSupportTicketHandler = async (req, res, next) => {
   }
 };
 
+const adminTransferHandler = async (req, res, next) => {
+  try {
+    const receipt = await adminTransferToUser(req.user.id, req.body);
+
+    logger.info(`Admin ${req.user.id} topped up account ${receipt.toAccount} with BDT ${receipt.amount}`);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Admin transfer completed successfully.',
+      data: receipt,
+    });
+  } catch (err) {
+    if (err.statusCode) return sendError(res, err);
+    return next(err);
+  }
+};
+
 module.exports = {
   overviewHandler,
 
@@ -254,4 +273,6 @@ module.exports = {
   listSupportTicketsHandler,
   getSupportTicketHandler,
   manageSupportTicketHandler,
+
+  adminTransferHandler,
 };

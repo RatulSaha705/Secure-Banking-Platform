@@ -17,14 +17,16 @@
  */
 
 const mongoose = require('mongoose');
+const crypto   = require('crypto');
 
 const User = require('../models/User');
 const Account = require('../models/Account');
 const Transaction = require('../models/Transaction');
 
 const { ROLES, normalizeRole } = require('../constants/roles');
-const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/storage');
+const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/secure-storage');
 const { nowIso, toIdString, buildSecCtx } = require('../utils/serviceHelpers');
+const { updateAccountBalance } = require('./accountService');
 
 const {
   getAllSupportTicketsForAdmin,
@@ -752,6 +754,123 @@ const manageSupportTicketForAdminPanel = async (adminUserId, ticketId, payload) 
   return manageSupportTicketAsAdmin(adminUserId, ticketId, payload);
 };
 
+/**
+ * adminTransferToUser  (Admin Feature)
+ *
+ * Credit money directly to any user's account by account number.
+ * Records a CREDIT transaction document for the recipient.
+ * Does not debit any source account — this is an admin-only top-up.
+ *
+ * @param {string} adminUserId
+ * @param {{ toAccountNumber, amount, description? }} payload
+ */
+const adminTransferToUser = async (adminUserId, payload) => {
+  const cleanAdminId = assertValidObjectId(adminUserId, 'admin user id');
+
+  const { toAccountNumber, amount, description } = payload || {};
+  const parsedAmount = Number(amount);
+
+  if (!toAccountNumber || cleanText(toAccountNumber) === '') {
+    const err = new Error('Recipient account number is required');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!parsedAmount || parsedAmount <= 0 || !Number.isFinite(parsedAmount)) {
+    const err = new Error('Amount must be a positive number');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (parsedAmount > 10_000_000) {
+    const err = new Error('Admin transfer limit is BDT 1,00,00,000');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Find the recipient account by scanning all accounts.
+  const allAccounts = await Account.find({}).lean();
+  let recipientAccountDoc = null;
+  let recipientUserId     = null;
+
+  for (const enc of allAccounts) {
+    const ownerId = getAccountOwnerIdFromEnvelope(enc);
+    if (!ownerId) continue;
+
+    let dec;
+    try {
+      const accountId = toIdString(enc._id);
+      dec = await decryptSensitiveFields('ACCOUNT', enc, accountCtx(ownerId, accountId));
+      dec._id = accountId;
+      dec.id  = accountId;
+    } catch { continue; }
+
+    const normalise = (s) => String(s || '').replace(/\s+/g, '').toUpperCase();
+    if (normalise(dec.accountNumber) === normalise(toAccountNumber)) {
+      recipientAccountDoc = dec;
+      recipientUserId     = ownerId;
+      break;
+    }
+  }
+
+  if (!recipientAccountDoc || !recipientUserId) {
+    const err = new Error('Recipient account number not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (recipientAccountDoc.accountStatus !== 'active') {
+    const err = new Error('Recipient account is not active');
+    err.statusCode = 422;
+    throw err;
+  }
+
+  // Credit the recipient.
+  const newBalance = Number(recipientAccountDoc.balance || 0) + parsedAmount;
+  await updateAccountBalance(recipientAccountDoc.id, recipientUserId, newBalance);
+
+  // Record a CREDIT transaction for the recipient.
+  const reference  = 'ADMIN' + crypto.randomBytes(5).toString('hex').toUpperCase();
+  const timestamp  = nowIso();
+  const txnId      = new mongoose.Types.ObjectId().toString();
+  const txnCtxFn   = (uid, tid) => buildSecCtx('transactions', uid, tid);
+
+  const full = {
+    _id:             txnId,
+    userId:          recipientUserId,
+    fromAccount:     'ADMIN',
+    toAccount:       recipientAccountDoc.accountNumber,
+    amount:          parsedAmount,
+    description:     description ?? 'Admin top-up',
+    reference,
+    receiverName:    null,
+    receiverBank:    'SecureBank',
+    transactionType: 'CREDIT',
+    status:          'completed',
+    createdAt:       timestamp,
+    updatedAt:       timestamp,
+  };
+
+  await Transaction.create(
+    await encryptSensitiveFields('TRANSACTION', full, txnCtxFn(recipientUserId, txnId))
+  );
+
+  await notifyUserSafely({
+    userId: recipientUserId,
+    title:  'Account Credited',
+    message: `BDT ${parsedAmount.toLocaleString()} has been added to your account by an administrator.`,
+    body:   `Reference: ${reference}. ${description ?? 'Admin top-up'}.`,
+  });
+
+  return {
+    success:      true,
+    reference,
+    amount:       parsedAmount,
+    toAccount:    recipientAccountDoc.accountNumber,
+    newBalance,
+    recipientUserId,
+    completedAt:  timestamp,
+  };
+};
+
 module.exports = {
   getAdminOverview,
 
@@ -768,4 +887,6 @@ module.exports = {
   listSupportTicketsForAdminPanel,
   getSupportTicketDetailsForAdminPanel,
   manageSupportTicketForAdminPanel,
+
+  adminTransferToUser,
 };

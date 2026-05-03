@@ -23,7 +23,7 @@ const User = require('../models/User');
 const Account = require('../models/Account');
 
 const { ROLES, normalizeRole } = require('../constants/roles');
-const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/storage');
+const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/secure-storage');
 const { nowIso, toIdString, buildSecCtx } = require('../utils/serviceHelpers');
 
 const NOTIFICATION_TYPES = Object.freeze({

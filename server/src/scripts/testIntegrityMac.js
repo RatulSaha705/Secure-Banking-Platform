@@ -21,7 +21,7 @@ const {
   verifyEncryptedFieldMac,
   assertEncryptedFieldMacValid,
   buildEncryptedFieldMacParts,
-} = require('../security/integrity');
+} = require('../security/data-integrity');
 
 const main = () => {
   const context = {

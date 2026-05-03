@@ -20,7 +20,7 @@ const crypto   = require('crypto');
 
 const Account = require('../models/Account');
 
-const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/storage');
+const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/secure-storage');
 const { nowIso, toIdString, buildSecCtx } = require('../utils/serviceHelpers');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -3,19 +3,20 @@
 /**
  * server/src/services/lookupHashService.js
  *
- * Feature 1 lookup hash service.
+ * Deterministic lookup hash service.
  *
- * Because email and username are encrypted, MongoDB cannot search them by
- * plaintext. So registration/login use deterministic lookup hashes:
+ * Because email and username are encrypted in MongoDB, we cannot search them
+ * by plaintext. So registration and login use deterministic lookup hashes:
  *
- *   emailLookupHash = HMAC(LOOKUP_HASH_SECRET, normalizedEmail)
- *   usernameLookupHash = HMAC(LOOKUP_HASH_SECRET, normalizedUsername)
+ *   emailLookupHash    = CBC-MAC(LOOKUP_HASH_SECRET, normalizedEmail)
+ *   usernameLookupHash = CBC-MAC(LOOKUP_HASH_SECRET, normalizedUsername)
  *
- * This uses your custom HMAC-SHA256-LAB implementation through
- * security/hash/passwordHash.js. It does not use crypto.createHmac.
+ * Uses cbcMac.js (Node built-in AES-128-CBC) — not the old custom HMAC.
+ * The createLookupHash function from passwordHash.js wraps this via built-in
+ * HMAC-SHA256, but for lookup hashes we use CBC-MAC for consistency.
  */
 
-const { createLookupHash } = require('../security/hash/passwordHash');
+const { createCbcMac } = require('../security/data-integrity/cbc-mac-engine');
 
 const getLookupSecret = () => {
   const secret = process.env.LOOKUP_HASH_SECRET;
@@ -29,11 +30,18 @@ const getLookupSecret = () => {
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
 
+/**
+ * Computes a CBC-MAC-based lookup hash for a given value.
+ * The key is derived from LOOKUP_HASH_SECRET via deriveCbcMacKey (SHA-256 → 16 bytes).
+ *
+ * @param {string} value
+ * @returns {string} hex MAC tag (32 chars)
+ */
 const computeLookupHash = (value) => {
-  return createLookupHash(getLookupSecret(), normalize(value));
+  return createCbcMac(getLookupSecret(), [normalize(value)]);
 };
 
-const computeEmailLookupHash = (email) => computeLookupHash(email);
+const computeEmailLookupHash    = (email)    => computeLookupHash(email);
 const computeUsernameLookupHash = (username) => computeLookupHash(username);
 
 module.exports = {

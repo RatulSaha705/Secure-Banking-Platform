@@ -26,7 +26,7 @@ const crypto   = require('crypto');
 const Transaction = require('../models/Transaction');
 const Account     = require('../models/Account');
 
-const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/storage');
+const { encryptSensitiveFields, decryptSensitiveFields } = require('../security/secure-storage');
 const { getMyAccount, updateAccountBalance }             = require('./accountService');
 const { nowIso, toIdString, buildSecCtx }                = require('../utils/serviceHelpers');
 
