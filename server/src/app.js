@@ -42,6 +42,9 @@ const {
 } = require('./middleware/rateLimiter');
 
 const logger = require('./utils/logger');
+const {
+  startAutoKeyRotationScheduler,
+} = require('./security/key-management/key-manager');
 
 const {
   notFoundHandler,
@@ -108,6 +111,10 @@ const PORT = parseInt(process.env.PORT, 10) || 5000;
 const startServer = async () => {
   try {
     await connectDB();
+
+    if (process.env.NODE_ENV !== 'test') {
+      startAutoKeyRotationScheduler({ logger });
+    }
 
     app.listen(PORT, () => {
       logger.info(`Server running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);

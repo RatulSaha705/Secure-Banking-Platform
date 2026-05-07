@@ -43,14 +43,14 @@ const ENCRYPTION_POLICY = Object.freeze({
 
   [DATA_TYPES.ACCOUNT_DETAILS]: {
     algorithm: ALGORITHMS.RSA,
-    keyPurpose: 'ACCOUNT_DATA',
-    description: 'Account number, account type, status, and balance-related data',
+    keyPurpose: 'USER_PROFILE',
+    description: 'Account data encrypted by the single per-user RSA key',
   },
 
   [DATA_TYPES.BENEFICIARY_DATA]: {
     algorithm: ALGORITHMS.RSA,
-    keyPurpose: 'BENEFICIARY_DATA',
-    description: 'Saved beneficiary details for repeat transfers',
+    keyPurpose: 'USER_PROFILE',
+    description: 'Beneficiary data encrypted by the single per-user RSA key',
   },
 
   [DATA_TYPES.TRANSACTION_DATA]: {
@@ -61,20 +61,20 @@ const ENCRYPTION_POLICY = Object.freeze({
 
   [DATA_TYPES.SUPPORT_TICKET]: {
     algorithm: ALGORITHMS.ECC,
-    keyPurpose: 'SUPPORT_TICKET',
-    description: 'Support ticket content used as the post-equivalent feature',
+    keyPurpose: 'TRANSACTION_DATA',
+    description: 'Support ticket content encrypted by the single per-user ECC key',
   },
 
   [DATA_TYPES.TICKET_COMMENT]: {
     algorithm: ALGORITHMS.ECC,
-    keyPurpose: 'SUPPORT_TICKET',
-    description: 'Support ticket comments or replies',
+    keyPurpose: 'TRANSACTION_DATA',
+    description: 'Ticket comments encrypted by the single per-user ECC key',
   },
 
   [DATA_TYPES.NOTIFICATION]: {
     algorithm: ALGORITHMS.ECC,
-    keyPurpose: 'NOTIFICATION',
-    description: 'Sensitive notification and alert body text',
+    keyPurpose: 'TRANSACTION_DATA',
+    description: 'Notifications encrypted by the single per-user ECC key',
   },
 
   [DATA_TYPES.TEST_RSA]: {
