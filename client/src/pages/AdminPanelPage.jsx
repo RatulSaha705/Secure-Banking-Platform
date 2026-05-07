@@ -573,38 +573,86 @@ const TransactionsTab = ({
 }) => {
   const transactions = transactionsData?.transactions || [];
 
+  const selectedAccountLabel =
+    transactionFilters.accountFilterType === 'receiver'
+      ? 'receiver account number'
+      : 'sender account number';
+
+  const hasAccountFilter = Boolean(transactionFilters.accountNumber?.trim());
+
+  const clearTransactionAccountFilter = () => {
+    setTransactionFilters((prev) => ({
+      ...prev,
+      accountNumber: '',
+      page: 1,
+    }));
+  };
+
   return (
     <div className="space-y-5">
       <div className="rounded-2xl bg-white p-5 shadow">
-        <div className="grid gap-4 md:grid-cols-2">
-          <input
-            type="text"
-            value={transactionFilters.search}
-            onChange={(e) =>
-              setTransactionFilters((prev) => ({
-                ...prev,
-                search: e.target.value,
-                page: 1,
-              }))
-            }
-            className="rounded-xl border border-gray-300 px-4 py-3 text-slate-900"
-            placeholder="Search by reference, account number, amount, or beneficiary"
-          />
+        <div className="grid gap-4 md:grid-cols-[240px_1fr_auto] md:items-end">
+          <div>
+            <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">
+              Filter By
+            </label>
 
-          <input
-            type="text"
-            value={transactionFilters.accountNumber}
-            onChange={(e) =>
-              setTransactionFilters((prev) => ({
-                ...prev,
-                accountNumber: e.target.value,
-                page: 1,
-              }))
-            }
-            className="rounded-xl border border-gray-300 px-4 py-3 text-slate-900"
-            placeholder="Filter by sender or receiver account number"
-          />
+            <select
+              value={transactionFilters.accountFilterType}
+              onChange={(e) =>
+                setTransactionFilters((prev) => ({
+                  ...prev,
+                  accountFilterType: e.target.value,
+                  page: 1,
+                }))
+              }
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-slate-900"
+              style={selectStyle}
+            >
+              <option value="sender" style={optionStyle}>
+                Sender Account Number
+              </option>
+
+              <option value="receiver" style={optionStyle}>
+                Receiver Account Number
+              </option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">
+              Account Number
+            </label>
+
+            <input
+              type="text"
+              value={transactionFilters.accountNumber}
+              onChange={(e) =>
+                setTransactionFilters((prev) => ({
+                  ...prev,
+                  accountNumber: e.target.value,
+                  page: 1,
+                }))
+              }
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-slate-900"
+              placeholder={`Enter ${selectedAccountLabel}`}
+              autoComplete="off"
+            />
+          </div>
+
+          <button
+            type="button"
+            disabled={!hasAccountFilter}
+            onClick={clearTransactionAccountFilter}
+            className="rounded-xl bg-gray-800 px-4 py-3 font-bold text-white transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Clear
+          </button>
         </div>
+
+        <p className="mt-3 text-xs text-gray-500">
+          Admin can filter transactions only by selected sender or receiver account number.
+        </p>
       </div>
 
       <div className="rounded-2xl bg-white shadow">
@@ -689,12 +737,16 @@ const TransactionsTab = ({
           </button>
 
           <p className="text-sm font-bold text-gray-600">
-            Page {transactionsData?.page || 1} of {transactionsData?.totalPages || 1}
+            Page {transactionsData?.page || 1} of{' '}
+            {transactionsData?.totalPages || 1}
           </p>
 
           <button
             type="button"
-            disabled={(transactionsData?.page || 1) >= (transactionsData?.totalPages || 1)}
+            disabled={
+              (transactionsData?.page || 1) >=
+              (transactionsData?.totalPages || 1)
+            }
             onClick={() =>
               setTransactionFilters((prev) => ({
                 ...prev,
@@ -738,7 +790,7 @@ const AdminPanelPage = () => {
   const [transactionFilters, setTransactionFilters] = useState({
     page: 1,
     limit: 10,
-    search: '',
+    accountFilterType: 'sender',
     accountNumber: '',
   });
 
@@ -769,17 +821,15 @@ const AdminPanelPage = () => {
       limit: transactionFilters.limit,
     };
   
-    if (transactionFilters.search.trim()) {
-      next.search = transactionFilters.search.trim();
-    }
-  
     if (transactionFilters.accountNumber.trim()) {
+      next.accountFilterType =
+        transactionFilters.accountFilterType === 'receiver' ? 'receiver' : 'sender';
+  
       next.accountNumber = transactionFilters.accountNumber.trim();
     }
   
     return next;
   }, [transactionFilters]);
-
   const fetchOverview = useCallback(async () => {
     if (!isAdmin) {
       setLoadingOverview(false);

@@ -164,7 +164,7 @@ const getAdminTicketStats = async () => {
   const unresolvedTickets = tickets.filter((ticket) => {
     const status = String(ticket.status || '').trim().toUpperCase();
 
-    return status !== 'RESOLVED' && status !== 'CLOSED';
+    return status === 'OPEN' || status === 'IN_PROGRESS';
   });
 
   return {

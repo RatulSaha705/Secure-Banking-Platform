@@ -203,7 +203,6 @@ const MODEL_STORAGE_POLICIES = Object.freeze({
       reply: 'TICKET_COMMENT',
       comments: 'TICKET_COMMENT',
       status: 'SUPPORT_TICKET',
-      priority: 'SUPPORT_TICKET',
       createdAt: 'SUPPORT_TICKET',
       updatedAt: 'SUPPORT_TICKET',
     },

@@ -519,10 +519,9 @@ const createSupportTicketCreatedAdminNotification = async (ticket) => {
     title: 'New support ticket submitted',
     message: `A user submitted a new support ticket: ${ticket.title}.`,
     body:
-      `Ticket ID: ${ticket.id}. ` +
-      `User ID: ${ticket.userId}. ` +
-      `Priority: ${ticket.priority}. ` +
-      `Status: ${ticket.status}.`,
+    `Ticket ID: ${ticket.id}. ` +
+    `User ID: ${ticket.userId}. ` +
+    `Status: ${ticket.status}.`,
   });
 };
 

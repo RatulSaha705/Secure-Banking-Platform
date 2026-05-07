@@ -723,6 +723,8 @@ const listTransactionsForAdmin = async (query = {}) => {
       .replace(/\s+/g, '')
       .toLowerCase();
 
+    const accountFilterType = cleanText(query.accountFilterType).toLowerCase();
+
     transactions = transactions.filter((txn) => {
       const fromAccount = String(txn.fromAccount || txn.senderAccountNumber || '')
         .replace(/\s+/g, '')
@@ -732,35 +734,15 @@ const listTransactionsForAdmin = async (query = {}) => {
         .replace(/\s+/g, '')
         .toLowerCase();
 
+      if (accountFilterType === 'receiver') {
+        return toAccount.includes(accountNumber);
+      }
+
+      if (accountFilterType === 'sender') {
+        return fromAccount.includes(accountNumber);
+      }
+
       return fromAccount.includes(accountNumber) || toAccount.includes(accountNumber);
-    });
-  }
-
-  if (query.type) {
-    const type = cleanText(query.type).toUpperCase();
-
-    transactions = transactions.filter((txn) => {
-      const txnType = String(txn.transactionType || txn.type || '').toUpperCase();
-      return txnType === type;
-    });
-  }
-
-  if (query.search) {
-    const search = cleanText(query.search)
-      .replace(/\s+/g, '')
-      .toLowerCase();
-
-    transactions = transactions.filter((txn) => {
-      return (
-        String(txn.id || '').toLowerCase().includes(search) ||
-        String(txn.reference || '').toLowerCase().includes(search) ||
-        String(txn.fromAccount || '').replace(/\s+/g, '').toLowerCase().includes(search) ||
-        String(txn.toAccount || '').replace(/\s+/g, '').toLowerCase().includes(search) ||
-        String(txn.senderAccountNumber || '').replace(/\s+/g, '').toLowerCase().includes(search) ||
-        String(txn.receiverAccountNumber || '').replace(/\s+/g, '').toLowerCase().includes(search) ||
-        String(txn.amount || '').toLowerCase().includes(search) ||
-        String(txn.beneficiaryName || '').toLowerCase().includes(search)
-      );
     });
   }
 

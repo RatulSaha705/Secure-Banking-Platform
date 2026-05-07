@@ -13,7 +13,7 @@
  *   - Ticket content uses SUPPORT_TICKET / TICKET_COMMENT storage policy.
  *   - The encryption policy maps these data types to custom ECC.
  *   - The encrypted storage layer attaches and verifies HMAC integrity MACs.
- *   - Because userId/status/priority are encrypted, list operations scan then
+ *   - Because userId/status are encrypted, list operations scan then
  *     decrypt/filter after authorization instead of querying plaintext fields.
  */
 
@@ -27,21 +27,11 @@ const { nowIso, toIdString, buildSecCtx } = require('../utils/serviceHelpers');
 const TICKET_STATUSES = Object.freeze({
   OPEN: 'OPEN',
   IN_PROGRESS: 'IN_PROGRESS',
-  WAITING_USER: 'WAITING_USER',
   RESOLVED: 'RESOLVED',
-  CLOSED: 'CLOSED',
-});
-
-const TICKET_PRIORITIES = Object.freeze({
-  LOW: 'LOW',
-  MEDIUM: 'MEDIUM',
-  HIGH: 'HIGH',
-  URGENT: 'URGENT',
 });
 
 const USER_EDIT_BLOCKED_STATUSES = Object.freeze([
   TICKET_STATUSES.RESOLVED,
-  TICKET_STATUSES.CLOSED,
 ]);
 
 const MAX_TITLE_LENGTH = 120;
@@ -69,18 +59,6 @@ const normalizeTicketStatus = (value, fallback = TICKET_STATUSES.OPEN) => {
 
   if (!Object.values(TICKET_STATUSES).includes(clean)) {
     const err = new Error('Invalid ticket status');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  return clean;
-};
-
-const normalizeTicketPriority = (value, fallback = TICKET_PRIORITIES.MEDIUM) => {
-  const clean = String(value || fallback).trim().toUpperCase();
-
-  if (!Object.values(TICKET_PRIORITIES).includes(clean)) {
-    const err = new Error('Invalid ticket priority');
     err.statusCode = 400;
     throw err;
   }
@@ -123,7 +101,6 @@ const toPublicTicket = (dec) => ({
   description: dec.message || '',
   comments: Array.isArray(dec.comments) ? dec.comments : [],
   status: dec.status || null,
-  priority: dec.priority || null,
   createdAt: dec.createdAt || null,
   updatedAt: dec.updatedAt || null,
 });
@@ -294,7 +271,6 @@ const createSupportTicket = async (userId, payload) => {
     message: payload?.message ?? payload?.description,
   });
 
-  const priority = normalizeTicketPriority(payload?.priority, TICKET_PRIORITIES.MEDIUM);
   const ticketId = new mongoose.Types.ObjectId().toString();
   const timestamp = nowIso();
 
@@ -305,7 +281,6 @@ const createSupportTicket = async (userId, payload) => {
     message: cleanMessage,
     comments: [],
     status: TICKET_STATUSES.OPEN,
-    priority,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -324,11 +299,6 @@ const getMySupportTickets = async (userId, filters = {}) => {
   if (filters.status) {
     const status = normalizeTicketStatus(filters.status);
     tickets = tickets.filter((ticket) => ticket.status === status);
-  }
-
-  if (filters.priority) {
-    const priority = normalizeTicketPriority(filters.priority);
-    tickets = tickets.filter((ticket) => ticket.priority === priority);
   }
 
   const list = sortNewestFirst(tickets).map(toPublicTicket);
@@ -351,7 +321,7 @@ const updateMySupportTicket = async (userId, ticketId, updates) => {
   const current = await findTicketForUser(cleanUserId, cleanTicketId);
 
   if (USER_EDIT_BLOCKED_STATUSES.includes(current.status)) {
-    const err = new Error('Resolved or closed tickets can no longer be edited by the user');
+    const err = new Error('Resolved tickets can no longer be edited by the user');
     err.statusCode = 403;
     throw err;
   }
@@ -373,10 +343,6 @@ const updateMySupportTicket = async (userId, ticketId, updates) => {
   const patch = {
     title: cleanTitle,
     message: cleanMessage,
-    priority:
-      updates?.priority !== undefined
-        ? normalizeTicketPriority(updates.priority)
-        : current.priority,
     updatedAt: nowIso(),
   };
 
@@ -401,13 +367,6 @@ const addMySupportTicketComment = async (userId, ticketId, payload) => {
   const cleanTicketId = assertValidObjectId(ticketId, 'ticket id');
 
   const current = await findTicketForUser(cleanUserId, cleanTicketId);
-
-  if (current.status === TICKET_STATUSES.CLOSED) {
-    const err = new Error('Closed tickets cannot receive new comments');
-    err.statusCode = 403;
-    throw err;
-  }
-
   const comments = Array.isArray(current.comments) ? current.comments : [];
 
   comments.push(
@@ -422,7 +381,7 @@ const addMySupportTicketComment = async (userId, ticketId, payload) => {
     comments,
     status:
       current.status === TICKET_STATUSES.RESOLVED
-        ? TICKET_STATUSES.WAITING_USER
+        ? TICKET_STATUSES.OPEN
         : current.status,
     updatedAt: nowIso(),
   };
@@ -456,11 +415,6 @@ const getAllSupportTicketsForAdmin = async (filters = {}) => {
     tickets = tickets.filter((ticket) => ticket.status === status);
   }
 
-  if (filters.priority) {
-    const priority = normalizeTicketPriority(filters.priority);
-    tickets = tickets.filter((ticket) => ticket.priority === priority);
-  }
-
   const list = sortNewestFirst(tickets).map(toPublicTicket);
 
   return {
@@ -486,10 +440,6 @@ const manageSupportTicketAsAdmin = async (adminUserId, ticketId, updates) => {
       updates?.status !== undefined
         ? normalizeTicketStatus(updates.status)
         : current.status,
-    priority:
-      updates?.priority !== undefined
-        ? normalizeTicketPriority(updates.priority)
-        : current.priority,
     comments: Array.isArray(current.comments) ? current.comments : [],
     updatedAt: nowIso(),
   };
@@ -522,7 +472,6 @@ const manageSupportTicketAsAdmin = async (adminUserId, ticketId, updates) => {
 
 module.exports = {
   TICKET_STATUSES,
-  TICKET_PRIORITIES,
 
   createSupportTicket,
   getMySupportTickets,

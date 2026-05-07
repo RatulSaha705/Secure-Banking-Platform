@@ -3,9 +3,7 @@ import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 import DashboardLayout from '../components/layout/DashboardLayout';
-import { useAuth } from '../context/AuthContext';
 import { getTransactionHistory } from '../services/transferService';
-import { getAdminTransactions } from '../services/adminPanelService';
 
 const fmt = (value) => {
   return new Intl.NumberFormat('en-BD', {
@@ -59,10 +57,6 @@ const maskAccNum = (raw) => {
   return (
     clean.slice(0, -4).replace(/./g, '•') + clean.slice(-4)
   ).match(/.{1,4}/g)?.join(' ') ?? raw;
-};
-
-const normalizeRole = (role) => {
-  return String(role || '').trim().toLowerCase();
 };
 
 const normalizeSearch = (value) => {
@@ -126,7 +120,7 @@ const TypeChip = ({ type }) => {
   );
 };
 
-const EmptyState = ({ filtered, isAdmin }) => {
+const EmptyState = ({ filtered }) => {
   return (
     <div className="flex flex-col items-center gap-3 py-16 text-center">
       <span className="text-5xl">{filtered ? '🔍' : '📭'}</span>
@@ -138,8 +132,6 @@ const EmptyState = ({ filtered, isAdmin }) => {
       <p className="text-sm text-slate-500">
         {filtered ? (
           'Try adjusting your filters or search term.'
-        ) : isAdmin ? (
-          'All encrypted transaction records will appear here.'
         ) : (
           <>
             Make your first transfer on the{' '}
@@ -157,7 +149,7 @@ const EmptyState = ({ filtered, isAdmin }) => {
 const SkeletonRow = () => {
   return (
     <tr>
-      {[...Array(7)].map((_, index) => (
+      {[...Array(8)].map((_, index) => (
         <td key={index} className="px-4 py-3">
           <div className="h-4 w-full animate-pulse rounded-lg bg-slate-700" />
         </td>
@@ -181,9 +173,6 @@ const initFilters = () => {
 const PAGE_SIZE = 15;
 
 const TransactionHistoryPage = () => {
-  const { currentUser } = useAuth();
-  const isAdmin = normalizeRole(currentUser?.role) === 'admin';
-
   const [allTxns, setAllTxns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(initFilters());
@@ -193,16 +182,11 @@ const TransactionHistoryPage = () => {
     setLoading(true);
 
     try {
-      let res;
-
-      if (isAdmin) {
-        res = await getAdminTransactions({
-          page: 1,
-          limit: 500,
-        });
-      } else {
-        res = await getTransactionHistory(1, 200);
-      }
+      // IMPORTANT:
+      // Admins must use the same personal transaction-history endpoint as normal users.
+      // This endpoint returns only req.user.id transactions.
+      // All-user transaction monitoring remains only in Admin Panel → Transactions tab.
+      const res = await getTransactionHistory(1, 200);
 
       const data = res.data?.data || {};
       setAllTxns(data.transactions || []);
@@ -211,7 +195,7 @@ const TransactionHistoryPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [isAdmin]);
+  }, []);
 
   useEffect(() => {
     fetchAll();
@@ -343,21 +327,13 @@ const TransactionHistoryPage = () => {
 
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">
-                {isAdmin
-                  ? 'Admin Transaction Monitoring'
-                  : 'Feature 12 — Secure Banking'}
-              </p>
+              
 
               <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white">
-                {isAdmin ? 'Admin Transaction History' : 'Transaction History'}
+                Transaction History
               </h1>
 
-              <p className="mt-1 text-sm text-slate-400">
-                {isAdmin
-                  ? 'Monitor all encrypted transaction records with sender and receiver account numbers.'
-                  : 'All records are encrypted at rest. MAC integrity verified on every read.'}
-              </p>
+              
             </div>
 
             <div className="flex gap-3">
@@ -571,10 +547,7 @@ const TransactionHistoryPage = () => {
                   ) : paginated.length === 0 ? (
                     <tr>
                       <td colSpan={8}>
-                        <EmptyState
-                          filtered={hasActiveFilters}
-                          isAdmin={isAdmin}
-                        />
+                        <EmptyState filtered={hasActiveFilters} />
                       </td>
                     </tr>
                   ) : (

@@ -13,37 +13,17 @@ const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
   { value: 'OPEN', label: 'Open' },
   { value: 'IN_PROGRESS', label: 'In Progress' },
-  { value: 'WAITING_USER', label: 'Waiting User' },
   { value: 'RESOLVED', label: 'Resolved' },
-  { value: 'CLOSED', label: 'Closed' },
-];
-
-const PRIORITY_OPTIONS = [
-  { value: '', label: 'All Priorities' },
-  { value: 'LOW', label: 'Low' },
-  { value: 'MEDIUM', label: 'Medium' },
-  { value: 'HIGH', label: 'High' },
-  { value: 'URGENT', label: 'Urgent' },
 ];
 
 const MANAGE_STATUS_OPTIONS = [
   { value: 'OPEN', label: 'Open' },
   { value: 'IN_PROGRESS', label: 'In Progress' },
-  { value: 'WAITING_USER', label: 'Waiting User' },
   { value: 'RESOLVED', label: 'Resolved' },
-  { value: 'CLOSED', label: 'Closed' },
-];
-
-const MANAGE_PRIORITY_OPTIONS = [
-  { value: 'LOW', label: 'Low' },
-  { value: 'MEDIUM', label: 'Medium' },
-  { value: 'HIGH', label: 'High' },
-  { value: 'URGENT', label: 'Urgent' },
 ];
 
 const FORM_INITIAL = {
   status: 'OPEN',
-  priority: 'MEDIUM',
   comment: '',
 };
 
@@ -82,9 +62,7 @@ const statusLabel = (status) => {
 
   if (clean === 'OPEN') return 'Open';
   if (clean === 'IN_PROGRESS') return 'In Progress';
-  if (clean === 'WAITING_USER') return 'Waiting User';
   if (clean === 'RESOLVED') return 'Resolved';
-  if (clean === 'CLOSED') return 'Closed';
 
   return clean || 'Unknown';
 };
@@ -94,20 +72,7 @@ const statusClass = (status) => {
 
   if (clean === 'OPEN') return 'bg-blue-100 text-blue-800 ring-blue-200';
   if (clean === 'IN_PROGRESS') return 'bg-amber-100 text-amber-800 ring-amber-200';
-  if (clean === 'WAITING_USER') return 'bg-purple-100 text-purple-800 ring-purple-200';
   if (clean === 'RESOLVED') return 'bg-emerald-100 text-emerald-800 ring-emerald-200';
-  if (clean === 'CLOSED') return 'bg-slate-200 text-slate-800 ring-slate-300';
-
-  return 'bg-slate-100 text-slate-800 ring-slate-200';
-};
-
-const priorityClass = (priority) => {
-  const clean = String(priority || '').toUpperCase();
-
-  if (clean === 'LOW') return 'bg-slate-100 text-slate-800 ring-slate-200';
-  if (clean === 'MEDIUM') return 'bg-blue-100 text-blue-800 ring-blue-200';
-  if (clean === 'HIGH') return 'bg-orange-100 text-orange-800 ring-orange-200';
-  if (clean === 'URGENT') return 'bg-red-100 text-red-800 ring-red-200';
 
   return 'bg-slate-100 text-slate-800 ring-slate-200';
 };
@@ -185,10 +150,6 @@ const TicketCard = ({ ticket, selected, onSelect }) => {
       <div className="mt-3 flex flex-wrap gap-2">
         <Badge className={statusClass(ticket.status)}>
           {statusLabel(ticket.status)}
-        </Badge>
-
-        <Badge className={priorityClass(ticket.priority)}>
-          {ticket.priority || 'MEDIUM'}
         </Badge>
       </div>
     </button>
@@ -270,10 +231,6 @@ const AdminTicketDetails = ({
           <Badge className={statusClass(ticket.status)}>
             {statusLabel(ticket.status)}
           </Badge>
-
-          <Badge className={priorityClass(ticket.priority)}>
-            {ticket.priority}
-          </Badge>
         </div>
       </div>
 
@@ -289,7 +246,7 @@ const AdminTicketDetails = ({
 
       <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50 p-4">
         <p className="mb-3 text-sm font-extrabold uppercase tracking-wide text-blue-800">
-          Quick Marking
+          Quick Status Update
         </p>
 
         <div className="flex flex-wrap gap-3">
@@ -299,7 +256,7 @@ const AdminTicketDetails = ({
             onClick={() => onQuickStatus('OPEN')}
             className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Reopen
+            Mark Open
           </button>
 
           <button
@@ -313,82 +270,38 @@ const AdminTicketDetails = ({
 
           <button
             type="button"
-            disabled={quickSaving || ticket.status === 'WAITING_USER'}
-            onClick={() => onQuickStatus('WAITING_USER')}
-            className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Mark Waiting User
-          </button>
-
-          <button
-            type="button"
             disabled={quickSaving || ticket.status === 'RESOLVED'}
             onClick={() => onQuickStatus('RESOLVED')}
             className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Mark Resolved
           </button>
-
-          <button
-            type="button"
-            disabled={quickSaving || ticket.status === 'CLOSED'}
-            onClick={() => onQuickStatus('CLOSED')}
-            className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Close Ticket
-          </button>
         </div>
       </div>
 
       <form onSubmit={onSave} className="mt-6 space-y-4 rounded-2xl border border-gray-200 p-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="mb-2 block text-sm font-extrabold text-gray-800">
-              Status
-            </label>
+        <div>
+          <label className="mb-2 block text-sm font-extrabold text-gray-800">
+            Status
+          </label>
 
-            <select
-              value={form.status}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  status: e.target.value,
-                }))
-              }
-              style={selectStyle}
-              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-            >
-              {MANAGE_STATUS_OPTIONS.map((item) => (
-                <option key={item.value} value={item.value} style={optionStyle}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-extrabold text-gray-800">
-              Priority
-            </label>
-
-            <select
-              value={form.priority}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  priority: e.target.value,
-                }))
-              }
-              style={selectStyle}
-              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-            >
-              {MANAGE_PRIORITY_OPTIONS.map((item) => (
-                <option key={item.value} value={item.value} style={optionStyle}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={form.status}
+            onChange={(e) =>
+              setForm((prev) => ({
+                ...prev,
+                status: e.target.value,
+              }))
+            }
+            style={selectStyle}
+            className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+          >
+            {MANAGE_STATUS_OPTIONS.map((item) => (
+              <option key={item.value} value={item.value} style={optionStyle}>
+                {item.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>
@@ -414,7 +327,7 @@ const AdminTicketDetails = ({
           disabled={saving}
           className="rounded-xl bg-blue-700 px-5 py-3 font-extrabold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {saving ? 'Saving...' : 'Save Manual Update'}
+          {saving ? 'Saving...' : 'Save Status Update'}
         </button>
       </form>
 
@@ -436,7 +349,6 @@ const AdminSupportTicketsPage = () => {
   const [tickets, setTickets] = useState([]);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState('');
   const [form, setForm] = useState(FORM_INITIAL);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -449,19 +361,14 @@ const AdminSupportTicketsPage = () => {
       next.status = statusFilter;
     }
 
-    if (priorityFilter) {
-      next.priority = priorityFilter;
-    }
-
     return next;
-  }, [statusFilter, priorityFilter]);
+  }, [statusFilter]);
 
   const selectTicket = useCallback((ticket) => {
     setSelectedTicket(ticket);
 
     setForm({
       status: ticket.status || 'OPEN',
-      priority: ticket.priority || 'MEDIUM',
       comment: '',
     });
   }, []);
@@ -505,7 +412,6 @@ const AdminSupportTicketsPage = () => {
 
     setForm({
       status: updatedTicket.status || 'OPEN',
-      priority: updatedTicket.priority || 'MEDIUM',
       comment: '',
     });
 
@@ -532,7 +438,6 @@ const AdminSupportTicketsPage = () => {
     try {
       const payload = {
         status: form.status,
-        priority: form.priority,
       };
 
       if (form.comment.trim()) {
@@ -542,7 +447,7 @@ const AdminSupportTicketsPage = () => {
       const res = await adminManageSupportTicket(selectedTicket.id, payload);
       const updatedTicket = res.data?.data;
 
-      toast.success('Ticket updated. User will be notified if marking changed.');
+      toast.success('Ticket status updated. User will be notified if status changed.');
 
       if (updatedTicket) {
         updateTicketLocally(updatedTicket);
@@ -566,7 +471,6 @@ const AdminSupportTicketsPage = () => {
     try {
       const res = await adminManageSupportTicket(selectedTicket.id, {
         status,
-        priority: selectedTicket.priority || 'MEDIUM',
       });
 
       const updatedTicket = res.data?.data;
@@ -625,27 +529,14 @@ const AdminSupportTicketsPage = () => {
           </div>
         </div>
 
-        <div className="mb-6 grid gap-4 md:grid-cols-2">
+        <div className="mb-6">
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             style={selectStyle}
-            className="rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+            className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
           >
             {STATUS_OPTIONS.map((item) => (
-              <option key={item.label} value={item.value} style={optionStyle}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
-            style={selectStyle}
-            className="rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-          >
-            {PRIORITY_OPTIONS.map((item) => (
               <option key={item.label} value={item.value} style={optionStyle}>
                 {item.label}
               </option>
