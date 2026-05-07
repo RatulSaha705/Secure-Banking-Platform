@@ -109,7 +109,7 @@ const LoginPage = () => {
       <div className="auth-card card">
         <div className="auth-logo">
           <h1>🔒 SecureBank</h1>
-          <p>Secure Banking System — CSE447 Lab</p>
+          <p>Secure Banking System</p>
         </div>
 
         {error && (

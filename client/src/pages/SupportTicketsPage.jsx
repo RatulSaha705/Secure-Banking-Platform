@@ -15,29 +15,17 @@ const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
   { value: 'OPEN', label: 'Open' },
   { value: 'IN_PROGRESS', label: 'In Progress' },
-  { value: 'WAITING_USER', label: 'Waiting User' },
   { value: 'RESOLVED', label: 'Resolved' },
-  { value: 'CLOSED', label: 'Closed' },
-];
-
-const PRIORITY_OPTIONS = [
-  { value: '', label: 'All Priorities' },
-  { value: 'LOW', label: 'Low' },
-  { value: 'MEDIUM', label: 'Medium' },
-  { value: 'HIGH', label: 'High' },
-  { value: 'URGENT', label: 'Urgent' },
 ];
 
 const CREATE_FORM_INITIAL = {
   title: '',
   message: '',
-  priority: 'MEDIUM',
 };
 
 const EDIT_FORM_INITIAL = {
   title: '',
   message: '',
-  priority: 'MEDIUM',
 };
 
 const getApiError = (err, fallback) =>
@@ -61,25 +49,22 @@ const formatDate = (iso) => {
   }
 };
 
+const statusLabel = (status) => {
+  const value = String(status || '').toUpperCase();
+
+  if (value === 'OPEN') return 'Open';
+  if (value === 'IN_PROGRESS') return 'In Progress';
+  if (value === 'RESOLVED') return 'Resolved';
+
+  return value || 'Unknown';
+};
+
 const statusClass = (status) => {
   const value = String(status || '').toUpperCase();
 
   if (value === 'OPEN') return 'bg-blue-100 text-blue-700';
   if (value === 'IN_PROGRESS') return 'bg-amber-100 text-amber-700';
-  if (value === 'WAITING_USER') return 'bg-purple-100 text-purple-700';
   if (value === 'RESOLVED') return 'bg-emerald-100 text-emerald-700';
-  if (value === 'CLOSED') return 'bg-slate-200 text-slate-700';
-
-  return 'bg-slate-100 text-slate-700';
-};
-
-const priorityClass = (priority) => {
-  const value = String(priority || '').toUpperCase();
-
-  if (value === 'LOW') return 'bg-slate-100 text-slate-700';
-  if (value === 'MEDIUM') return 'bg-blue-100 text-blue-700';
-  if (value === 'HIGH') return 'bg-orange-100 text-orange-700';
-  if (value === 'URGENT') return 'bg-red-100 text-red-700';
 
   return 'bg-slate-100 text-slate-700';
 };
@@ -95,11 +80,16 @@ const EmptyState = ({ onCreateClick }) => (
     <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-blue-50 text-3xl">
       🎧
     </div>
-    <h3 className="mt-5 text-xl font-extrabold text-slate-900">No support tickets yet</h3>
+
+    <h3 className="mt-5 text-xl font-extrabold text-slate-900">
+      No support tickets yet
+    </h3>
+
     <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
       Create a ticket for account, transfer, login, profile, or security-related problems.
       Ticket content is stored encrypted on the backend.
     </p>
+
     <button
       type="button"
       onClick={onCreateClick}
@@ -123,19 +113,18 @@ const TicketCard = ({ ticket, selected, onSelect }) => (
         <h3 className="truncate text-base font-extrabold text-slate-900">
           {ticket.title || 'Untitled Ticket'}
         </h3>
+
         <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">
           {ticket.message || ticket.description || 'No message'}
         </p>
       </div>
+
       <span className="shrink-0 text-xl">🎫</span>
     </div>
 
     <div className="mt-4 flex flex-wrap items-center gap-2">
       <TicketBadge className={statusClass(ticket.status)}>
-        {ticket.status || 'UNKNOWN'}
-      </TicketBadge>
-      <TicketBadge className={priorityClass(ticket.priority)}>
-        {ticket.priority || 'MEDIUM'}
+        {statusLabel(ticket.status)}
       </TicketBadge>
     </div>
 
@@ -175,10 +164,12 @@ const TicketComments = ({ comments }) => {
               <span className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
                 {isAdmin ? 'Admin Reply' : 'User Comment'}
               </span>
+
               <span className="text-xs text-slate-400">
                 {formatDate(comment.createdAt)}
               </span>
             </div>
+
             <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
               {comment.message}
             </p>
@@ -193,13 +184,13 @@ const CreateTicketForm = ({ form, setForm, submitting, onSubmit }) => (
   <form onSubmit={onSubmit} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
     <div className="flex items-start justify-between gap-3">
       <div>
-        <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
-          New Support Ticket
-        </p>
+        
+
         <h2 className="mt-1 text-xl font-extrabold text-slate-900">
           Create a problem request
         </h2>
       </div>
+
       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-xl">
         ✍️
       </div>
@@ -210,6 +201,7 @@ const CreateTicketForm = ({ form, setForm, submitting, onSubmit }) => (
         <label htmlFor="ticket-title" className="text-sm font-bold text-slate-700">
           Title
         </label>
+
         <input
           id="ticket-title"
           name="title"
@@ -224,28 +216,10 @@ const CreateTicketForm = ({ form, setForm, submitting, onSubmit }) => (
       </div>
 
       <div>
-        <label htmlFor="ticket-priority" className="text-sm font-bold text-slate-700">
-          Priority
-        </label>
-        <select
-          id="ticket-priority"
-          name="priority"
-          value={form.priority}
-          onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value }))}
-          className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-        >
-          {PRIORITY_OPTIONS.filter((item) => item.value).map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
         <label htmlFor="ticket-message" className="text-sm font-bold text-slate-700">
           Message
         </label>
+
         <textarea
           id="ticket-message"
           name="message"
@@ -288,7 +262,11 @@ const TicketDetails = ({
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-2xl">
           👈
         </div>
-        <h2 className="mt-4 text-xl font-extrabold text-slate-900">Select a ticket</h2>
+
+        <h2 className="mt-4 text-xl font-extrabold text-slate-900">
+          Select a ticket
+        </h2>
+
         <p className="mt-2 text-sm leading-6 text-slate-500">
           Open a ticket from the left side to view, edit, or add comments.
         </p>
@@ -296,7 +274,7 @@ const TicketDetails = ({
     );
   }
 
-  const isLocked = ['RESOLVED', 'CLOSED'].includes(String(ticket.status || '').toUpperCase());
+  const isResolved = String(ticket.status || '').toUpperCase() === 'RESOLVED';
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
@@ -305,9 +283,11 @@ const TicketDetails = ({
           <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
             Ticket Details
           </p>
+
           <h2 className="mt-1 text-2xl font-extrabold text-slate-900">
             {ticket.title}
           </h2>
+
           <p className="mt-2 text-xs font-medium text-slate-400">
             Created: {formatDate(ticket.createdAt)} • Updated: {formatDate(ticket.updatedAt)}
           </p>
@@ -315,16 +295,16 @@ const TicketDetails = ({
 
         <div className="flex flex-wrap gap-2">
           <TicketBadge className={statusClass(ticket.status)}>
-            {ticket.status}
-          </TicketBadge>
-          <TicketBadge className={priorityClass(ticket.priority)}>
-            {ticket.priority}
+            {statusLabel(ticket.status)}
           </TicketBadge>
         </div>
       </div>
 
       <div className="mt-6 rounded-2xl bg-slate-50 px-4 py-4">
-        <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Message</p>
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+          Message
+        </p>
+
         <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">
           {ticket.message || ticket.description}
         </p>
@@ -334,25 +314,26 @@ const TicketDetails = ({
         <button
           type="button"
           onClick={() => setEditing((prev) => !prev)}
-          disabled={isLocked}
+          disabled={isResolved}
           className="rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
           {editing ? 'Cancel Edit' : 'Edit Ticket'}
         </button>
       </div>
 
-      {isLocked && (
+      {isResolved && (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
-          This ticket is resolved or closed, so user editing is disabled.
+          This ticket is resolved, so user editing is disabled. Adding a comment will reopen it as Open.
         </div>
       )}
 
-      {editing && !isLocked && (
+      {editing && !isResolved && (
         <form onSubmit={onUpdate} className="mt-6 space-y-4 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
           <div>
             <label htmlFor="edit-ticket-title" className="text-sm font-bold text-slate-700">
               Title
             </label>
+
             <input
               id="edit-ticket-title"
               type="text"
@@ -365,27 +346,10 @@ const TicketDetails = ({
           </div>
 
           <div>
-            <label htmlFor="edit-ticket-priority" className="text-sm font-bold text-slate-700">
-              Priority
-            </label>
-            <select
-              id="edit-ticket-priority"
-              value={editForm.priority}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, priority: e.target.value }))}
-              className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-            >
-              {PRIORITY_OPTIONS.filter((item) => item.value).map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
             <label htmlFor="edit-ticket-message" className="text-sm font-bold text-slate-700">
               Message
             </label>
+
             <textarea
               id="edit-ticket-message"
               value={editForm.message}
@@ -408,6 +372,7 @@ const TicketDetails = ({
 
       <div className="mt-8">
         <h3 className="text-lg font-extrabold text-slate-900">Comments</h3>
+
         <div className="mt-4">
           <TicketComments comments={ticket.comments} />
         </div>
@@ -417,6 +382,7 @@ const TicketDetails = ({
         <label htmlFor="ticket-comment" className="text-sm font-bold text-slate-700">
           Add Comment
         </label>
+
         <textarea
           id="ticket-comment"
           value={comment}
@@ -426,9 +392,10 @@ const TicketDetails = ({
           maxLength="2000"
           required
         />
+
         <button
           type="submit"
-          disabled={commenting || String(ticket.status || '').toUpperCase() === 'CLOSED'}
+          disabled={commenting}
           className="mt-3 rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
           {commenting ? 'Adding...' : 'Add Comment'}
@@ -451,7 +418,6 @@ const SupportTicketsPage = () => {
   const [editing, setEditing] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState('');
   const [createForm, setCreateForm] = useState(CREATE_FORM_INITIAL);
   const [editForm, setEditForm] = useState(EDIT_FORM_INITIAL);
   const [comment, setComment] = useState('');
@@ -462,17 +428,15 @@ const SupportTicketsPage = () => {
     const next = {};
 
     if (statusFilter) next.status = statusFilter;
-    if (priorityFilter) next.priority = priorityFilter;
 
     return next;
-  }, [statusFilter, priorityFilter]);
+  }, [statusFilter]);
 
   const selectTicket = useCallback((ticket) => {
     setSelectedTicket(ticket);
     setEditForm({
       title: ticket.title || '',
       message: ticket.message || ticket.description || '',
-      priority: ticket.priority || 'MEDIUM',
     });
     setComment('');
     setEditing(false);
@@ -516,7 +480,6 @@ const SupportTicketsPage = () => {
       const res = await createSupportTicket({
         title: createForm.title.trim(),
         message: createForm.message.trim(),
-        priority: createForm.priority,
       });
 
       const created = res.data?.data;
@@ -545,7 +508,6 @@ const SupportTicketsPage = () => {
       const res = await updateMySupportTicket(selectedTicket.id, {
         title: editForm.title.trim(),
         message: editForm.message.trim(),
-        priority: editForm.priority,
       });
 
       const updated = res.data?.data;
@@ -596,7 +558,7 @@ const SupportTicketsPage = () => {
       <div className="-m-8 min-h-screen bg-slate-100 px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl space-y-8">
           <nav className="flex items-center gap-2 text-sm text-slate-500">
-            <Link to="/dashboard" className="hover:text-blue-600 transition-colors">
+            <Link to="/dashboard" className="transition-colors hover:text-blue-600">
               Dashboard
             </Link>
             <span>/</span>
@@ -605,16 +567,13 @@ const SupportTicketsPage = () => {
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
-                Feature 13 — Encrypted Post Equivalent
-              </p>
+              
+
               <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">
                 Support Ticket System
               </h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-                Create, view, edit, and comment on support tickets. The backend stores ticket
-                content through the encrypted storage layer using ECC and MAC integrity checks.
-              </p>
+
+             
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -655,25 +614,13 @@ const SupportTicketsPage = () => {
                   <span className="text-2xl">📬</span>
                 </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                <div className="mt-5">
                   <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
-                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                   >
                     {STATUS_OPTIONS.map((item) => (
-                      <option key={item.label} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={priorityFilter}
-                    onChange={(e) => setPriorityFilter(e.target.value)}
-                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                  >
-                    {PRIORITY_OPTIONS.map((item) => (
                       <option key={item.label} value={item.value}>
                         {item.label}
                       </option>

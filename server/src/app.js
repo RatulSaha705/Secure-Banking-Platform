@@ -13,6 +13,7 @@
  *   /api/beneficiary
  *   /api/support-tickets
  *   /api/notifications
+ *   /api/admin
  */
 
 require('dotenv').config();
@@ -36,9 +37,19 @@ const supportTicketRoutes = require('./routes/supportTicketRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const adminPanelRoutes = require('./routes/adminPanelRoutes');
 
-const rateLimiter = require('./middleware/rateLimiter');
+const {
+  generalApiLimiter,
+} = require('./middleware/rateLimiter');
+
 const logger = require('./utils/logger');
-const { notFoundHandler, globalErrorHandler } = require('./middleware/errorMiddleware');
+const {
+  startAutoKeyRotationScheduler,
+} = require('./security/key-management/key-manager');
+
+const {
+  notFoundHandler,
+  globalErrorHandler,
+} = require('./middleware/errorMiddleware');
 
 const app = express();
 
@@ -63,7 +74,16 @@ if (process.env.NODE_ENV !== 'test') {
   }));
 }
 
-app.use('/api/', rateLimiter);
+/**
+ * General API protection.
+ *
+ * This protects the whole API from abnormal traffic,
+ * but it is not strict enough to block normal page navigation.
+ *
+ * Login/register/OTP routes have their own stricter limiters
+ * inside authRoutes.js.
+ */
+app.use('/api/', generalApiLimiter);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/keys', keyRoutes);
@@ -91,6 +111,10 @@ const PORT = parseInt(process.env.PORT, 10) || 5000;
 const startServer = async () => {
   try {
     await connectDB();
+
+    if (process.env.NODE_ENV !== 'test') {
+      startAutoKeyRotationScheduler({ logger });
+    }
 
     app.listen(PORT, () => {
       logger.info(`Server running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);

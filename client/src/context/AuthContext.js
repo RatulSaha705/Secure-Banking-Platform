@@ -22,7 +22,7 @@ import {
 const AuthContext = createContext(null);
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
-const ACTIVITY_SYNC_THROTTLE_MS = 30 * 1000;
+const ACTIVITY_SYNC_THROTTLE_MS = 2 * 60 * 1000;
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);

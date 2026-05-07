@@ -26,7 +26,7 @@ const Avatar = ({ name }) => {
 
   return (
     <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-xl font-extrabold text-white shadow-lg ring-2 ring-blue-500/30">
-      {initials}
+      {initials || 'U'}
     </div>
   );
 };
@@ -212,7 +212,7 @@ const DashboardPage = () => {
 
   const userStats = data?.userStats;
   const ticketStats = data?.ticketStats;
-  const alertStats = data?.alertStats;
+  const transactionStats = data?.transactionStats;
 
   const latestNotification =
     recentNotifications.length > 0 ? recentNotifications[0] : null;
@@ -220,9 +220,11 @@ const DashboardPage = () => {
   const displayName =
     profile?.fullName ||
     profile?.username ||
+    currentUser?.fullName ||
     currentUser?.name ||
     currentUser?.username ||
-    'Authenticated User';
+    currentUser?.email ||
+    'User';
 
   const firstName = displayName.split(' ')[0];
 
@@ -266,28 +268,20 @@ const DashboardPage = () => {
   const adminDashboardCards = [
     {
       label: 'Total Users',
-      value: userStats?.available ? userStats.totalUsers || 0 : '—',
-      subtext: userStats?.available
-        ? 'Registered secure banking users'
-        : 'User statistics loading...',
+      value: userStats?.available ? userStats.totalUsers || 0 : 0,
+      subtext: 'Registered secure banking users',
       colorClass: 'from-blue-700 to-blue-900',
     },
     {
-      label: 'Open Tickets',
-      value: ticketStats?.available ? ticketStats.openCount || 0 : '—',
-      subtext: ticketStats?.available
-        ? 'Tickets waiting for review'
-        : 'Ticket module loading...',
+      label: 'Unresolved Tickets',
+      value: ticketStats?.available ? ticketStats.unresolvedCount || 0 : 0,
+      subtext: 'Tickets not resolved or closed',
       colorClass: 'from-emerald-600 to-emerald-800',
     },
     {
-      label: 'Pending Alerts',
-      value: alertStats?.available
-        ? alertStats.pendingNotifications || 0
-        : '—',
-      subtext: alertStats?.available
-        ? 'System notifications pending'
-        : 'Alert module loading...',
+      label: 'Transactions Today',
+      value: transactionStats?.available ? transactionStats.todayCount || 0 : 0,
+      subtext: 'Total transaction records created today',
       colorClass: 'from-amber-500 to-orange-600',
     },
   ];
@@ -321,11 +315,12 @@ const DashboardPage = () => {
       ? userQuickActionsFromBackend
       : USER_FALLBACK_ACTIONS;
 
-  const maskedAccountNumber = account?.available && account.accountNumber
-    ? account.accountNumber
-        .replace(/\S{4}(?=\S)/g, '•••• ')
-        .slice(0, -4) + account.accountNumber.slice(-4)
-    : '•••• •••• •••• ——';
+  const maskedAccountNumber =
+    account?.available && account.accountNumber
+      ? account.accountNumber
+          .replace(/\S{4}(?=\S)/g, '•••• ')
+          .slice(0, -4) + account.accountNumber.slice(-4)
+      : '•••• •••• •••• ——';
 
   return (
     <DashboardLayout>
@@ -347,7 +342,7 @@ const DashboardPage = () => {
 
                 <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
                   {isAdmin
-                    ? 'Your administrator dashboard is active. Use quick actions to manage users, tickets, alerts, and your profile.'
+                    ? 'Your administrator dashboard is active. Use quick actions to manage users, tickets, transactions, alerts, and your profile.'
                     : 'Your secure banking dashboard — profile management, balance, transfer, and transaction history are ready to use.'}
                 </p>
 
@@ -496,11 +491,7 @@ const DashboardPage = () => {
                 </h2>
               </div>
 
-              <p className="max-w-2xl text-sm text-slate-500">
-                {isAdmin
-                  ? 'Only active administrator actions are shown here.'
-                  : 'Only currently available banking features are shown here.'}
-              </p>
+              
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

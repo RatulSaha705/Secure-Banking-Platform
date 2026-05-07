@@ -41,35 +41,54 @@ const Sidebar = () => {
     <aside className="sidebar">
       <div className="sidebar-logo">🔒 SecureBank</div>
 
-      <NavLink to="/dashboard" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+      <NavLink
+        to="/dashboard"
+        className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+      >
         📊 Dashboard
       </NavLink>
 
-      <NavLink to="/profile" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+      <NavLink
+        to="/profile"
+        className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+      >
         👤 My Profile
       </NavLink>
 
-      <NavLink to="/account-balance" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+      <NavLink
+        to="/account-balance"
+        className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+      >
         💰 Account Balance
       </NavLink>
 
+      <NavLink
+        to="/transfer"
+        className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+      >
+        💸 Money Transfer
+      </NavLink>
+
+      <NavLink
+        to="/transactions"
+        className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+      >
+        📜 Transaction History
+      </NavLink>
+
       {!isAdmin && (
-        <>
-          <NavLink to="/transfer" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-            💸 Money Transfer
-          </NavLink>
-
-          <NavLink to="/transactions" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-            📜 Transaction History
-          </NavLink>
-
-          <NavLink to="/support-tickets" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-            🎧 Support Tickets
-          </NavLink>
-        </>
+        <NavLink
+          to="/support-tickets"
+          className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+        >
+          🎧 Support Tickets
+        </NavLink>
       )}
 
-      <NavLink to="/notifications" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+      <NavLink
+        to="/notifications"
+        className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+      >
         <span>🔔 Notifications</span>
 
         {unreadCount > 0 && (
@@ -91,11 +110,17 @@ const Sidebar = () => {
 
       {isAdmin && (
         <>
-          <NavLink to="/admin" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          <NavLink
+            to="/admin"
+            className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+          >
             🧭 Admin Panel
           </NavLink>
 
-          <NavLink to="/admin/support-tickets" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          <NavLink
+            to="/admin/support-tickets"
+            className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+          >
             🛡️ Admin Tickets
           </NavLink>
         </>

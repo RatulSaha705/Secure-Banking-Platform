@@ -5,9 +5,13 @@
  *
  * Feature 10 — Money Transfer routes.
  *
- * RBAC:
- *   Regular users can initiate transfers and view their own transaction history.
- *   Admins must use /api/admin/transactions for monitoring.
+ * Users and admins can use the same money transfer page.
+ * Every request still requires valid authentication.
+ *
+ * Security remains:
+ * - requireAuth checks valid JWT/session.
+ * - transferService encrypts transaction data before storage.
+ * - transferService verifies encrypted data through secure storage/MAC layer.
  */
 
 const express = require('express');
@@ -22,11 +26,9 @@ const {
 
 const {
   requireAuth,
-  requireUser,
 } = require('../middleware/authMiddleware');
 
 router.use(requireAuth);
-router.use(requireUser);
 
 router.post('/initiate', initiateTransferHandler);
 

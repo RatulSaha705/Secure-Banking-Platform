@@ -5,20 +5,11 @@ import toast from 'react-hot-toast';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../context/AuthContext';
 import {
-    getMyNotifications,
-    markNotificationAsRead,
-    markAllNotificationsAsRead,
-    adminSendAccountNumberNotification,
-  } from '../services/notificationService';
-
-const TYPE_OPTIONS = [
-  { value: '', label: 'All Types' },
-  { value: 'LOGIN_ALERT', label: 'Login Alert' },
-  { value: 'TRANSACTION_ALERT', label: 'Transaction Alert' },
-  { value: 'SUPPORT_TICKET_CREATED', label: 'Ticket Created' },
-  { value: 'SUPPORT_TICKET_RESOLVED', label: 'Ticket Resolved' },
-  { value: 'GENERAL_ALERT', label: 'General Alert' },
-];
+  getMyNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  adminSendAccountNumberNotification,
+} from '../services/notificationService';
 
 const READ_OPTIONS = [
   { value: '', label: 'All Notifications' },
@@ -27,12 +18,11 @@ const READ_OPTIONS = [
 ];
 
 const ADMIN_FORM_INITIAL = {
-    accountNumber: '',
-    type: 'GENERAL_ALERT',
-    title: '',
-    message: '',
-    body: '',
-  };
+  accountNumber: '',
+  title: '',
+  message: '',
+  body: '',
+};
 
 const deepSelectStyle = {
   color: '#0f172a',
@@ -46,6 +36,11 @@ const deepOptionStyle = {
   fontWeight: '700',
 };
 
+const inputClassName =
+  'w-full rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-950 placeholder:text-slate-400 placeholder:font-medium outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-100';
+
+const textAreaClassName =
+  'min-h-24 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-950 placeholder:text-slate-400 placeholder:font-medium outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-100';
 
 const getApiError = (err, fallback) => {
   return err?.response?.data?.message || err?.message || fallback;
@@ -111,6 +106,15 @@ const getTypeIcon = (type) => {
   return '🔔';
 };
 
+const formatTypeLabel = (type) => {
+  const cleanType = String(type || 'GENERAL_ALERT').trim();
+
+  return cleanType
+    .replaceAll('_', ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+
 const NotificationCard = ({ notification, onMarkRead }) => {
   return (
     <div
@@ -139,12 +143,12 @@ const NotificationCard = ({ notification, onMarkRead }) => {
               )}
             </div>
 
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-1 text-sm font-medium text-gray-700">
               {notification.message}
             </p>
 
             {notification.body && (
-              <p className="mt-3 whitespace-pre-wrap rounded-xl bg-white p-3 text-sm text-gray-700">
+              <p className="mt-3 whitespace-pre-wrap rounded-xl bg-white p-3 text-sm font-medium text-gray-800">
                 {notification.body}
               </p>
             )}
@@ -155,7 +159,7 @@ const NotificationCard = ({ notification, onMarkRead }) => {
                   notification.type
                 )}`}
               >
-                {notification.type}
+                {formatTypeLabel(notification.type)}
               </span>
 
               <span className="text-xs font-medium text-gray-400">
@@ -194,65 +198,37 @@ const AdminSendNotificationForm = ({
         <p className="text-sm font-bold uppercase tracking-wide text-purple-700">
           Admin Tool
         </p>
+
         <h2 className="text-xl font-bold text-gray-900">
-          Send User Notification
+          Send Notification to the User
         </h2>
-        <p className="mt-1 text-sm text-gray-500">
-        Send an encrypted notification to a specific user by account number.
-        </p>
+
+       
       </div>
 
       <div className="space-y-4">
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-700">
-          Target Account Number
+          <label className="mb-2 block text-sm font-bold text-gray-800">
+            Target Account Number
           </label>
 
-            <input
+          <input
             type="text"
             value={form.accountNumber}
             onChange={(e) =>
-            setForm((prev) => ({
+              setForm((prev) => ({
                 ...prev,
                 accountNumber: e.target.value,
-            }))
+              }))
             }
-            className="w-full rounded-xl border border-gray-300 px-4 py-3"
+            className={inputClassName}
             placeholder="Example: 1212 6125 1602 8111"
             required
-            />
+          />
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-700">
-            Type
-          </label>
-
-          <select
-            value={form.type}
-            onChange={(e) =>
-                setForm((prev) => ({
-                ...prev,
-                type: e.target.value,
-                }))
-            }
-            style={deepSelectStyle}
-            className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-            >
-            {TYPE_OPTIONS.filter((item) => item.value).map((item) => (
-                <option
-                key={item.value}
-                value={item.value}
-                style={deepOptionStyle}
-                >
-                {item.label}
-                </option>
-            ))}
-            </select>
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-bold text-gray-700">
+          <label className="mb-2 block text-sm font-bold text-gray-800">
             Title
           </label>
 
@@ -265,14 +241,14 @@ const AdminSendNotificationForm = ({
                 title: e.target.value,
               }))
             }
-            className="w-full rounded-xl border border-gray-300 px-4 py-3"
+            className={inputClassName}
             placeholder="Example: Account alert"
             required
           />
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-700">
+          <label className="mb-2 block text-sm font-bold text-gray-800">
             Message
           </label>
 
@@ -285,14 +261,14 @@ const AdminSendNotificationForm = ({
                 message: e.target.value,
               }))
             }
-            className="w-full rounded-xl border border-gray-300 px-4 py-3"
+            className={inputClassName}
             placeholder="Short notification message"
             required
           />
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-700">
+          <label className="mb-2 block text-sm font-bold text-gray-800">
             Body Optional
           </label>
 
@@ -304,7 +280,7 @@ const AdminSendNotificationForm = ({
                 body: e.target.value,
               }))
             }
-            className="min-h-24 w-full rounded-xl border border-gray-300 px-4 py-3"
+            className={textAreaClassName}
             placeholder="Detailed notification body"
           />
         </div>
@@ -328,7 +304,6 @@ const NotificationsPage = () => {
 
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [typeFilter, setTypeFilter] = useState('');
   const [readFilter, setReadFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [markingAll, setMarkingAll] = useState(false);
@@ -338,16 +313,12 @@ const NotificationsPage = () => {
   const filters = useMemo(() => {
     const next = {};
 
-    if (typeFilter) {
-      next.type = typeFilter;
-    }
-
     if (readFilter) {
       next.isRead = readFilter;
     }
 
     return next;
-  }, [typeFilter, readFilter]);
+  }, [readFilter]);
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
@@ -396,20 +367,27 @@ const NotificationsPage = () => {
   const handleAdminSend = async (e) => {
     e.preventDefault();
     setSending(true);
-  
+
     try {
       await adminSendAccountNumberNotification({
         accountNumber: adminForm.accountNumber.trim(),
-        type: adminForm.type,
+        type: 'GENERAL_ALERT',
         title: adminForm.title.trim(),
         message: adminForm.message.trim(),
         body: adminForm.body.trim(),
       });
-  
-      toast.success('Notification sent successfully.');
-  
+
+      toast.success('Notification sent successfully to the target user only.');
+
       setAdminForm(ADMIN_FORM_INITIAL);
-      await fetchNotifications();
+
+      /*
+       * Do not call fetchNotifications() here.
+       * Reason:
+       * - Admin is sending the notification to a target account number.
+       * - Admin should not receive or display a copy.
+       * - The target user will see it from their own Notifications page.
+       */
     } catch (err) {
       toast.error(getApiError(err, 'Failed to send notification.'));
     } finally {
@@ -426,9 +404,7 @@ const NotificationsPage = () => {
               Notifications & Alerts
             </h1>
 
-            <p className="mt-1 text-gray-600">
-              View login alerts, transaction alerts, support ticket alerts, and admin messages.
-            </p>
+            
 
             <p className="mt-2 text-sm font-bold text-blue-700">
               Unread: {unreadCount}
@@ -454,26 +430,13 @@ const NotificationsPage = () => {
           </div>
         </div>
 
-        <div className="mb-6 grid gap-4 md:grid-cols-2">
-        <select
-        value={typeFilter}
-        onChange={(e) => setTypeFilter(e.target.value)}
-        style={deepSelectStyle}
-        className="rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-        >
-            {TYPE_OPTIONS.map((item) => (
-              <option key={item.label} value={item.value} style={deepOptionStyle}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-
+        <div className="mb-6 max-w-md">
           <select
             value={readFilter}
             onChange={(e) => setReadFilter(e.target.value)}
             style={deepSelectStyle}
-            className="rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-            >
+            className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+          >
             {READ_OPTIONS.map((item) => (
               <option key={item.label} value={item.value} style={deepOptionStyle}>
                 {item.label}

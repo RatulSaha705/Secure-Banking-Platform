@@ -31,25 +31,46 @@ const PRIVATE_KEY_ENV_BY_ALGORITHM = Object.freeze({
 });
 
 const KEY_USAGE_BY_PURPOSE = Object.freeze({
-  USER_PROFILE: 'Encrypt registration, login display, and profile fields',
-  ACCOUNT_DATA: 'Encrypt account number, account type, status, and balance-related fields',
-  BENEFICIARY_DATA: 'Encrypt saved beneficiary details',
-  TRANSACTION_DATA: 'Encrypt transaction history and transfer-sensitive records',
-  SUPPORT_TICKET: 'Encrypt support ticket / post-equivalent content',
-  NOTIFICATION: 'Encrypt sensitive notification body text',
+  // Canonical per-user RSA key. This single RSA pair now encrypts:
+  // USER_PROFILE + ACCOUNT_DATA + BENEFICIARY_DATA.
+  USER_PROFILE: 'Single per-user RSA key for profile, account, and beneficiary data',
+
+  // Legacy purposes are kept so old encrypted records and old key rows remain readable.
+  // New encryption no longer selects these purposes.
+  ACCOUNT_DATA: 'LEGACY only - replaced by USER_PROFILE RSA key',
+  BENEFICIARY_DATA: 'LEGACY only - replaced by USER_PROFILE RSA key',
+
+  // Canonical per-user ECC key. This single ECC pair now encrypts:
+  // TRANSACTION_DATA + SUPPORT_TICKET + NOTIFICATION.
+  TRANSACTION_DATA: 'Single per-user ECC key for transactions, tickets, and notifications',
+
+  // Legacy purposes are kept so old encrypted records and old key rows remain readable.
+  // New encryption no longer selects these purposes.
+  SUPPORT_TICKET: 'LEGACY only - replaced by TRANSACTION_DATA ECC key',
+  NOTIFICATION: 'LEGACY only - replaced by TRANSACTION_DATA ECC key',
+
   TEST: 'Testing only',
 });
 
-const DEFAULT_INITIAL_KEY_PLANS = Object.freeze([
+const CANONICAL_USER_KEY_PLANS = Object.freeze([
   { algorithm: 'RSA', purpose: 'USER_PROFILE' },
-  { algorithm: 'RSA', purpose: 'ACCOUNT_DATA' },
-  { algorithm: 'RSA', purpose: 'BENEFICIARY_DATA' },
   { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
-  { algorithm: 'ECC', purpose: 'SUPPORT_TICKET' },
-  { algorithm: 'ECC', purpose: 'NOTIFICATION' },
 ]);
 
-const DEFAULT_USER_KEY_PLANS = DEFAULT_INITIAL_KEY_PLANS;
+const DEFAULT_INITIAL_KEY_PLANS = CANONICAL_USER_KEY_PLANS;
+const DEFAULT_USER_KEY_PLANS = CANONICAL_USER_KEY_PLANS;
+
+const LEGACY_USER_KEY_PURPOSES = Object.freeze([
+  'ACCOUNT_DATA',
+  'BENEFICIARY_DATA',
+  'SUPPORT_TICKET',
+  'NOTIFICATION',
+]);
+
+const KEY_ROTATION_DAYS = Number(process.env.KEY_ROTATION_DAYS || 30);
+const KEY_ROTATION_CHECK_INTERVAL_MS = Number(
+  process.env.KEY_ROTATION_CHECK_INTERVAL_MS || 6 * 60 * 60 * 1000
+);
 
 const DATA_TYPE_TO_KEY_PLAN = Object.freeze({
   USER: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
@@ -57,26 +78,28 @@ const DATA_TYPE_TO_KEY_PLAN = Object.freeze({
   USER_PROFILE: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
   PROFILE: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
 
-  ACCOUNT: { algorithm: 'RSA', purpose: 'ACCOUNT_DATA' },
-  ACCOUNT_DATA: { algorithm: 'RSA', purpose: 'ACCOUNT_DATA' },
-  ACCOUNT_DETAILS: { algorithm: 'RSA', purpose: 'ACCOUNT_DATA' },
-  BALANCE: { algorithm: 'RSA', purpose: 'ACCOUNT_DATA' },
+  // These now use the same one RSA pair as USER_PROFILE.
+  ACCOUNT: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
+  ACCOUNT_DATA: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
+  ACCOUNT_DETAILS: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
+  BALANCE: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
 
-  BENEFICIARY: { algorithm: 'RSA', purpose: 'BENEFICIARY_DATA' },
-  BENEFICIARY_DATA: { algorithm: 'RSA', purpose: 'BENEFICIARY_DATA' },
+  BENEFICIARY: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
+  BENEFICIARY_DATA: { algorithm: 'RSA', purpose: 'USER_PROFILE' },
 
   TRANSACTION: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
   TRANSACTION_DATA: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
   TRANSFER: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
 
-  SUPPORT_TICKET: { algorithm: 'ECC', purpose: 'SUPPORT_TICKET' },
-  TICKET: { algorithm: 'ECC', purpose: 'SUPPORT_TICKET' },
-  POST: { algorithm: 'ECC', purpose: 'SUPPORT_TICKET' },
-  TICKET_COMMENT: { algorithm: 'ECC', purpose: 'SUPPORT_TICKET' },
-  COMMENT: { algorithm: 'ECC', purpose: 'SUPPORT_TICKET' },
+  // These now use the same one ECC pair as TRANSACTION_DATA.
+  SUPPORT_TICKET: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
+  TICKET: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
+  POST: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
+  TICKET_COMMENT: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
+  COMMENT: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
 
-  NOTIFICATION: { algorithm: 'ECC', purpose: 'NOTIFICATION' },
-  ALERT: { algorithm: 'ECC', purpose: 'NOTIFICATION' },
+  NOTIFICATION: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
+  ALERT: { algorithm: 'ECC', purpose: 'TRANSACTION_DATA' },
 
   TEST_RSA: { algorithm: 'RSA', purpose: 'TEST' },
   TEST_ECC: { algorithm: 'ECC', purpose: 'TEST' },
@@ -649,12 +672,40 @@ const ensureInitialKeySet = async (options = {}) => {
   });
 };
 
+const retireLegacyActiveUserKeys = async (ownerUserId, notes = '') => {
+  const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
+
+  if (!normalizedOwnerUserId) {
+    throw new Error('ownerUserId is required to retire legacy user keys');
+  }
+
+  const result = await CryptoKey.updateMany(
+    {
+      ...buildOwnerQuery(normalizedOwnerUserId),
+      status: 'ACTIVE',
+      purpose: { $in: LEGACY_USER_KEY_PURPOSES },
+    },
+    {
+      $set: {
+        status: 'RETIRED',
+        retiredAt: new Date(),
+        notes:
+          notes ||
+          'Retired automatically because this project now uses only one RSA key and one ECC key per user.',
+      },
+    }
+  );
+
+  return result.modifiedCount || 0;
+};
+
 const ensureUserKeySet = async ({
   ownerUserId,
   persistToEnvFile = true,
   envFilePath,
   rsaKeySizeBits = 1024,
   rsaRounds = 40,
+  retireLegacyKeys = true,
 } = {}) => {
   const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
 
@@ -662,15 +713,207 @@ const ensureUserKeySet = async ({
     throw new Error('ownerUserId is required to generate per-user key pairs');
   }
 
-  return ensureKeySetFromPlans({
+  const result = await ensureKeySetFromPlans({
     plans: DEFAULT_USER_KEY_PLANS,
     ownerUserId: normalizedOwnerUserId,
     persistToEnvFile,
     envFilePath,
     rsaKeySizeBits,
     rsaRounds,
-    notes: `Per-user key generated for user ${normalizedOwnerUserId}`,
+    notes: `Per-user canonical key generated for user ${normalizedOwnerUserId}`,
   });
+
+  result.retiredLegacyKeyCount = retireLegacyKeys
+    ? await retireLegacyActiveUserKeys(normalizedOwnerUserId)
+    : 0;
+
+  return result;
+};
+
+const getRotationCutoffDate = (rotationDays = KEY_ROTATION_DAYS) => {
+  const days = Number(rotationDays);
+
+  if (!Number.isFinite(days) || days < 0) {
+    throw new Error('rotationDays must be a non-negative number');
+  }
+
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+};
+
+const listActiveUserKeysDueForRotation = async ({
+  rotationDays = KEY_ROTATION_DAYS,
+  ownerUserId = null,
+} = {}) => {
+  const cutoff = getRotationCutoffDate(rotationDays);
+
+  const query = {
+    ownerType: 'USER',
+    status: 'ACTIVE',
+    activatedAt: { $lte: cutoff },
+    $or: CANONICAL_USER_KEY_PLANS.map((plan) => ({
+      algorithm: plan.algorithm,
+      purpose: plan.purpose,
+    })),
+  };
+
+  if (ownerUserId) {
+    query.ownerUserId = new mongoose.Types.ObjectId(normalizeOwnerUserId(ownerUserId));
+  }
+
+  return CryptoKey.find(query)
+    .sort({ ownerUserId: 1, algorithm: 1, purpose: 1 })
+    .lean();
+};
+
+const ensureCanonicalKeysForKnownUsers = async ({
+  persistToEnvFile = true,
+  envFilePath,
+  rsaKeySizeBits = 1024,
+  rsaRounds = 40,
+} = {}) => {
+  const ownerIds = await CryptoKey.distinct('ownerUserId', {
+    ownerType: 'USER',
+    ownerUserId: { $ne: null },
+  });
+
+  let checkedUsers = 0;
+  let createdKeys = 0;
+  let retiredLegacyKeys = 0;
+
+  for (const ownerId of ownerIds) {
+    const result = await ensureUserKeySet({
+      ownerUserId: String(ownerId),
+      persistToEnvFile,
+      envFilePath,
+      rsaKeySizeBits,
+      rsaRounds,
+      retireLegacyKeys: true,
+    });
+
+    checkedUsers += 1;
+    createdKeys += result.created.length;
+    retiredLegacyKeys += result.retiredLegacyKeyCount || 0;
+  }
+
+  return {
+    checkedUsers,
+    createdKeys,
+    retiredLegacyKeys,
+  };
+};
+
+const rotateDueUserKeys = async ({
+  rotationDays = KEY_ROTATION_DAYS,
+  ownerUserId = null,
+  persistToEnvFile = true,
+  envFilePath,
+  rsaKeySizeBits = 1024,
+  rsaRounds = 40,
+} = {}) => {
+  const dueKeys = await listActiveUserKeysDueForRotation({
+    rotationDays,
+    ownerUserId,
+  });
+
+  const rotated = [];
+  const failed = [];
+
+  for (const key of dueKeys) {
+    try {
+      const result = await rotateKey({
+        algorithm: key.algorithm,
+        purpose: key.purpose,
+        ownerUserId: key.ownerUserId ? String(key.ownerUserId) : null,
+        persistToEnvFile,
+        envFilePath,
+        rsaKeySizeBits,
+        rsaRounds,
+        notes:
+          `Auto-rotated after ${rotationDays} day(s). ` +
+          `Previous key: ${key.keyId}.`,
+      });
+
+      rotated.push(result.keyRecord);
+    } catch (error) {
+      failed.push({
+        keyId: key.keyId,
+        error: error.message,
+      });
+    }
+  }
+
+  return {
+    dueCount: dueKeys.length,
+    rotated,
+    failed,
+  };
+};
+
+const runAutoKeyRotationOnce = async (options = {}) => {
+  const normalized = await ensureCanonicalKeysForKnownUsers(options);
+  const rotation = await rotateDueUserKeys(options);
+
+  return {
+    rotationDays: options.rotationDays || KEY_ROTATION_DAYS,
+    normalized,
+    rotation: {
+      dueCount: rotation.dueCount,
+      rotatedCount: rotation.rotated.length,
+      failedCount: rotation.failed.length,
+      rotated: rotation.rotated,
+      failed: rotation.failed,
+    },
+  };
+};
+
+let autoKeyRotationTimer = null;
+
+const startAutoKeyRotationScheduler = ({
+  rotationDays = KEY_ROTATION_DAYS,
+  checkIntervalMs = KEY_ROTATION_CHECK_INTERVAL_MS,
+  persistToEnvFile = true,
+  envFilePath,
+  rsaKeySizeBits = Number(process.env.KEY_SETUP_RSA_BITS || 1024),
+  rsaRounds = Number(process.env.KEY_SETUP_RSA_ROUNDS || 40),
+  logger = console,
+} = {}) => {
+  if (String(process.env.KEY_AUTO_ROTATION_ENABLED || 'true').toLowerCase() === 'false') {
+    logger.info?.('Automatic key rotation is disabled by KEY_AUTO_ROTATION_ENABLED=false');
+    return null;
+  }
+
+  if (autoKeyRotationTimer) {
+    return autoKeyRotationTimer;
+  }
+
+  const run = async () => {
+    try {
+      const result = await runAutoKeyRotationOnce({
+        rotationDays,
+        persistToEnvFile,
+        envFilePath,
+        rsaKeySizeBits,
+        rsaRounds,
+      });
+
+      logger.info?.(
+        `Auto key rotation check complete. ` +
+        `users=${result.normalized.checkedUsers}, ` +
+        `createdKeys=${result.normalized.createdKeys}, ` +
+        `retiredLegacyKeys=${result.normalized.retiredLegacyKeys}, ` +
+        `dueKeys=${result.rotation.dueCount}, ` +
+        `rotatedKeys=${result.rotation.rotatedCount}, ` +
+        `failed=${result.rotation.failedCount}`
+      );
+    } catch (error) {
+      logger.error?.(`Auto key rotation failed: ${error.message}`);
+    }
+  };
+
+  setTimeout(run, 5000);
+  autoKeyRotationTimer = setInterval(run, checkIntervalMs);
+
+  return autoKeyRotationTimer;
 };
 
 const sanitizeKeyRecord = (keyRecord) => {
@@ -692,6 +935,10 @@ module.exports = {
   KEY_USAGE_BY_PURPOSE,
   DEFAULT_INITIAL_KEY_PLANS,
   DEFAULT_USER_KEY_PLANS,
+  CANONICAL_USER_KEY_PLANS,
+  LEGACY_USER_KEY_PURPOSES,
+  KEY_ROTATION_DAYS,
+  KEY_ROTATION_CHECK_INTERVAL_MS,
   DATA_TYPE_TO_KEY_PLAN,
 
   normalizeAlgorithm,
@@ -726,5 +973,12 @@ module.exports = {
   getActiveKeyMaterialForDataType,
   ensureInitialKeySet,
   ensureUserKeySet,
+  retireLegacyActiveUserKeys,
+  getRotationCutoffDate,
+  listActiveUserKeysDueForRotation,
+  ensureCanonicalKeysForKnownUsers,
+  rotateDueUserKeys,
+  runAutoKeyRotationOnce,
+  startAutoKeyRotationScheduler,
   sanitizeKeyRecord,
 };
