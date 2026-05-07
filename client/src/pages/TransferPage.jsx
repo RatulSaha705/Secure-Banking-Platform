@@ -307,15 +307,11 @@ const TransferPage = () => {
 
           {/* Header */}
           <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">
-              Features 10 &amp; 11 — Secure Banking
-            </p>
+           
             <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white">
               Money Transfer
             </h1>
-            <p className="mt-1 text-sm text-slate-400">
-              Send money and manage saved beneficiaries. All data is encrypted at rest.
-            </p>
+            
           </div>
 
           {/* Balance strip */}
@@ -437,11 +433,7 @@ const TransferPage = () => {
 
               {/* Security notice */}
               <div className="mt-5 rounded-2xl bg-slate-800/60 border border-slate-700 px-4 py-3">
-                <p className="text-xs leading-5 text-slate-400">
-                  🔐 All transfer data is encrypted with <strong className="text-slate-200">RSA + ECC</strong> before
-                  storage. MAC integrity (<strong className="text-slate-200">HMAC-SHA256</strong>) is verified on
-                  every read. Your balance is updated atomically.
-                </p>
+               
               </div>
             </div>
 
@@ -492,9 +484,7 @@ const TransferPage = () => {
                   <div className="flex flex-col items-center gap-3 py-10 text-center">
                     <span className="text-5xl">👥</span>
                     <p className="text-sm font-semibold text-slate-400">No beneficiaries yet.</p>
-                    <p className="text-xs text-slate-500 leading-5">
-                      Type an account number on the left<br />and tap <strong className="text-indigo-400">⭐ Save to Beneficiaries</strong>.
-                    </p>
+                   
                   </div>
                 ) : (
                   beneficiaries.map((ben) => (
@@ -511,12 +501,7 @@ const TransferPage = () => {
 
               {/* Info tip */}
               <div className="mt-5 rounded-2xl bg-slate-800/60 border border-slate-700 px-4 py-3">
-                <p className="text-xs leading-5 text-slate-400">
-                  🔐 Beneficiary account numbers are encrypted with
-                  <strong className="text-slate-200"> RSA + ECC</strong> and
-                  integrity-checked with <strong className="text-slate-200">HMAC-SHA256</strong>.
-                  Click <strong className="text-blue-300">Use</strong> on any entry to pre-fill the transfer form.
-                </p>
+                
               </div>
             </div>
 

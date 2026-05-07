@@ -208,15 +208,12 @@ const AccountBalancePage = () => {
           {/* ── Page header ────────────────────────────────────────────────── */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
-                Feature 8 — Secure Banking
-              </p>
+              
               <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">
                 Account Balance
               </h1>
               <p className="mt-2 text-sm text-slate-500">
-                Your financial summary — all data is encrypted at rest and decrypted only for this
-                authenticated session.
+               
               </p>
             </div>
 
@@ -278,36 +275,7 @@ const AccountBalancePage = () => {
             </div>
           </div>
 
-          {/* ── Security notice ───────────────────────────────────────────── */}
-          <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-6">
-            <div className="flex items-start gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-xl">
-                🔐
-              </div>
-              <div>
-                <h3 className="font-bold text-emerald-900">Security Notice</h3>
-                <p className="mt-1 text-sm leading-6 text-emerald-800">
-                  Your balance and account details are encrypted at rest using dual-asymmetric
-                  encryption (RSA + ECC). Every field is protected with an HMAC-SHA256 integrity
-                  tag. This data is only decrypted inside your current secure session — it is
-                  never stored in plaintext.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
-                  {[
-                    'AES-256-GCM ciphertext',
-                    'HMAC-SHA256 integrity',
-                    'RSA + ECC dual encryption',
-                    'Bearer token access',
-                  ].map((tag) => (
-                    <span key={tag} className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700 ring-1 ring-emerald-200">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
+          
           {/* ── Last updated ──────────────────────────────────────────────── */}
           {data?.asOf && (
             <p className="text-center text-xs text-slate-400">

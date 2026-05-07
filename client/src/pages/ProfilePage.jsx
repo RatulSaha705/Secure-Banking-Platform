@@ -251,9 +251,7 @@ const ProfilePage = () => {
 
         {/* ── Page header ───────────────────────────────────────────────── */}
         <div className="page-header mb-0">
-          <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">
-            Feature 6
-          </p>
+          
           <h1 className="page-title mt-1 text-2xl">Profile Management</h1>
           <p className="page-subtitle mt-1">
             View and update your personal information. All data is encrypted
@@ -279,11 +277,11 @@ const ProfilePage = () => {
               <div className="mt-4 flex flex-wrap gap-3">
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-600/20 px-3 py-1 text-xs font-semibold text-blue-300 ring-1 ring-blue-500/30">
                   <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
-                  Dual-asymmetric encryption active
+                
                 </span>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600/20 px-3 py-1 text-xs font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  HMAC-SHA256 integrity verified
+                 
                 </span>
               </div>
             </div>

@@ -317,16 +317,40 @@ const toPublicUser = (user, accountNumber = '') => {
   };
 };
 
-const toPublicTransaction = (txn) => {
+const toPublicTransaction = (txn, accountNumberMap = new Map()) => {
+  const userId = txn.userId || txn.ownerUserId || txn.fromUserId || null;
+
+  const mappedSenderAccount = userId
+    ? accountNumberMap.get(String(userId)) || ''
+    : '';
+
+  const fromAccount =
+    txn.fromAccount ||
+    txn.fromAccountNumber ||
+    txn.senderAccountNumber ||
+    mappedSenderAccount ||
+    '';
+
+  const toAccount =
+    txn.toAccount ||
+    txn.toAccountNumber ||
+    txn.receiverAccountNumber ||
+    '';
+
   return {
     id: txn.id || txn._id,
-    userId: txn.userId || txn.ownerUserId || txn.fromUserId || null,
+    userId,
     transactionType: txn.transactionType || txn.type || '',
     type: txn.type || txn.transactionType || '',
     amount: Number(txn.amount || 0),
     currency: txn.currency || 'BDT',
-    fromAccount: txn.fromAccount || txn.fromAccountNumber || '',
-    toAccount: txn.toAccount || txn.toAccountNumber || '',
+
+    fromAccount,
+    senderAccountNumber: fromAccount,
+
+    toAccount,
+    receiverAccountNumber: toAccount,
+
     beneficiaryName: txn.beneficiaryName || '',
     status: txn.status || 'UNKNOWN',
     reference: txn.reference || txn.transactionReference || '',
@@ -364,6 +388,8 @@ const scanAllUsers = async () => {
 
 const scanAllTransactions = async () => {
   const all = await Transaction.find({}).lean();
+  const accountNumberMap = await buildUserAccountNumberMap();
+
   const transactions = [];
   let tamperedCount = 0;
 
@@ -372,7 +398,7 @@ const scanAllTransactions = async () => {
       const dec = await decryptTransactionDocument(enc);
 
       if (dec) {
-        transactions.push(toPublicTransaction(dec));
+        transactions.push(toPublicTransaction(dec, accountNumberMap));
       }
     } catch {
       tamperedCount += 1;
@@ -433,7 +459,9 @@ const findTransactionByIdForAdmin = async (transactionId) => {
     throw err;
   }
 
-  return toPublicTransaction(dec);
+  const accountNumberMap = await buildUserAccountNumberMap();
+
+  return toPublicTransaction(dec, accountNumberMap);
 };
 
 const notifyUserSafely = async ({ userId, title, message, body }) => {
@@ -690,14 +718,22 @@ const listTransactionsForAdmin = async (query = {}) => {
   const result = await scanAllTransactions();
   let transactions = result.transactions;
 
-  if (query.userId) {
-    const cleanUserId = assertValidObjectId(query.userId, 'user id');
-    transactions = transactions.filter((txn) => String(txn.userId || '') === cleanUserId);
-  }
+  if (query.accountNumber) {
+    const accountNumber = cleanText(query.accountNumber)
+      .replace(/\s+/g, '')
+      .toLowerCase();
 
-  if (query.status) {
-    const status = cleanText(query.status).toUpperCase();
-    transactions = transactions.filter((txn) => String(txn.status || '').toUpperCase() === status);
+    transactions = transactions.filter((txn) => {
+      const fromAccount = String(txn.fromAccount || txn.senderAccountNumber || '')
+        .replace(/\s+/g, '')
+        .toLowerCase();
+
+      const toAccount = String(txn.toAccount || txn.receiverAccountNumber || '')
+        .replace(/\s+/g, '')
+        .toLowerCase();
+
+      return fromAccount.includes(accountNumber) || toAccount.includes(accountNumber);
+    });
   }
 
   if (query.type) {
@@ -710,15 +746,19 @@ const listTransactionsForAdmin = async (query = {}) => {
   }
 
   if (query.search) {
-    const search = cleanText(query.search).toLowerCase();
+    const search = cleanText(query.search)
+      .replace(/\s+/g, '')
+      .toLowerCase();
 
     transactions = transactions.filter((txn) => {
       return (
         String(txn.id || '').toLowerCase().includes(search) ||
-        String(txn.userId || '').toLowerCase().includes(search) ||
         String(txn.reference || '').toLowerCase().includes(search) ||
-        String(txn.fromAccount || '').toLowerCase().includes(search) ||
-        String(txn.toAccount || '').toLowerCase().includes(search) ||
+        String(txn.fromAccount || '').replace(/\s+/g, '').toLowerCase().includes(search) ||
+        String(txn.toAccount || '').replace(/\s+/g, '').toLowerCase().includes(search) ||
+        String(txn.senderAccountNumber || '').replace(/\s+/g, '').toLowerCase().includes(search) ||
+        String(txn.receiverAccountNumber || '').replace(/\s+/g, '').toLowerCase().includes(search) ||
+        String(txn.amount || '').toLowerCase().includes(search) ||
         String(txn.beneficiaryName || '').toLowerCase().includes(search)
       );
     });
