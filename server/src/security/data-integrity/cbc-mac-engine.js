@@ -1,6 +1,42 @@
 'use strict';
 
 /**
+ * ============================================================================
+ * CONTRIBUTION: Data Integrity — CBC-MAC Engine (Sifat)
+ * ============================================================================
+ *
+ * Security Feature : ✔ Data Integrity (MAC)
+ * Responsibility   : MAC (CBC-MAC) — Core cryptographic engine
+ *
+ * This module implements the CBC-MAC (Cipher Block Chaining – Message
+ * Authentication Code) algorithm used throughout the platform to guarantee
+ * data integrity. Every sensitive record stored in MongoDB is tagged with
+ * a CBC-MAC so that any unauthorized modification can be detected.
+ *
+ * Key contributions in this file:
+ *   1. deriveCbcMacKey()       — Derives a 128-bit AES key from the master
+ *                                 secret via SHA-256 (first 16 bytes).
+ *   2. padMessage()            — Zero-pads the message to the AES block size
+ *                                 with a 4-byte length prefix (ISO/IEC 9797-1
+ *                                 Padding Method 1) to prevent variable-length
+ *                                 message attacks.
+ *   3. cbcMacBuffer()          — Core MAC computation: AES-128-CBC encrypt
+ *                                 with a zero IV, returning the last 16-byte
+ *                                 ciphertext block as the MAC tag.
+ *   4. timingSafeEqualHex()    — Constant-time comparison of hex MAC tags
+ *                                 to prevent timing side-channel attacks.
+ *   5. createCbcMac()          — High-level helper that canonicalizes an
+ *                                 array of record parts into a stable string
+ *                                 and computes the CBC-MAC tag.
+ *   6. verifyCbcMac()          — Verifies a previously created CBC-MAC tag
+ *                                 using timing-safe comparison.
+ *
+ * This engine uses Node.js built-in crypto.createCipheriv for AES — only
+ * RSA and ECC are custom-built in the project.
+ * ============================================================================
+ */
+
+/**
  * security/integrity/cbcMac.js
  *
  * CBC-MAC (Cipher Block Chaining - Message Authentication Code)

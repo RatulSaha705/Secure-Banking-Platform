@@ -1,6 +1,33 @@
 'use strict';
 
 /**
+ * ============================================================================
+ * CONTRIBUTION: Secure Storage Layer — Field MAC Record (Sifat)
+ * ============================================================================
+ *
+ * Security Feature : ✔ Data Integrity (MAC) + Secure Storage
+ * Responsibility   : Secure Storage Layer — Per-field & per-document MAC
+ *
+ * This module provides lightweight MAC helpers used by the field encryptor
+ * (field-encryptor.js). It builds the parts array for a field-level MAC
+ * and delegates to the CBC-MAC engine for tag computation.
+ *
+ * Key contributions in this file:
+ *   1. buildFieldMacParts()   — Constructs a deterministic array of strings
+ *                                from the encrypted field envelope and its
+ *                                context (documentType, collection, owner,
+ *                                field name, algorithm, keyId, ciphertext).
+ *   2. createFieldMac()       — Computes a CBC-MAC tag for a single
+ *                                encrypted field.
+ *   3. verifyFieldMac()       — Re-computes and timing-safe compares the
+ *                                MAC tag on a single encrypted field.
+ *   4. createDocumentMac()    — Computes a CBC-MAC over an entire document
+ *                                using stable (sorted-key) serialization.
+ *   5. verifyDocumentMac()    — Verifies a document-level MAC tag.
+ * ============================================================================
+ */
+
+/**
  * security/storage/macRecord.js
  *
  * MAC helpers for encrypted fields and full records.

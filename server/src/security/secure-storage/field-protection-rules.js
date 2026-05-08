@@ -1,6 +1,38 @@
 'use strict';
 
 /**
+ * ============================================================================
+ * CONTRIBUTION: Secure Storage Layer — Field Protection Rules (Sifat)
+ * ============================================================================
+ *
+ * Security Feature : ✔ Data Integrity (MAC) + Secure Storage
+ * Responsibility   : Secure Storage Layer — Encryption policy definitions
+ *
+ * This file defines WHAT must be encrypted for every MongoDB model. It is
+ * the single source of truth for the strict encryption rule: only _id
+ * stays readable; everything else is encrypted.
+ *
+ * Key contributions in this file:
+ *   1. MODEL_STORAGE_POLICIES    — Per-model policies listing every sensitive
+ *                                   field and its data-type classification
+ *                                   (USER, REFRESH_SESSION, ACCOUNT,
+ *                                   BENEFICIARY, TRANSACTION, SUPPORT_TICKET,
+ *                                   NOTIFICATION, etc.).
+ *   2. MODEL_ALIASES             — Maps alternative model names (e.g.,
+ *                                   'AUTH' → 'USER', 'SESSION' →
+ *                                   'REFRESH_SESSION') for flexible lookups.
+ *   3. normalizeModelName()      — Resolves any model alias to its canonical
+ *                                   policy key; throws if no policy exists.
+ *   4. getStoragePolicy()        — Returns the full policy object for a model.
+ *   5. getSensitiveFields()      — Returns the list of field names that must
+ *                                   be encrypted for a given model.
+ *   6. getDataTypeForField()     — Returns the data-type classification for a
+ *                                   specific field, used to select the correct
+ *                                   encryption key.
+ * ============================================================================
+ */
+
+/**
  * server/src/security/storage/storagePolicy.js
  *
  * Strict encrypted DB storage policy.

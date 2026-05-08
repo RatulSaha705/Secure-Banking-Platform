@@ -1,6 +1,33 @@
 'use strict';
 
 /**
+ * ============================================================================
+ * CONTRIBUTION: Session Management — RefreshSession Model (Sifat)
+ * ============================================================================
+ *
+ * Security Feature : ✔ Session Security
+ * Responsibility   : Session Management — Encrypted session schema
+ *
+ * This Mongoose model defines the schema for refresh sessions. Following
+ * the strict encryption rule, every field except _id is stored as an
+ * encrypted envelope (Schema.Types.Mixed). The tokenService encrypts all
+ * session data before writing and decrypts after reading.
+ *
+ * Encrypted fields stored per session:
+ *   • userId, refreshTokenHash, status
+ *   • ipAddress, userAgent (client fingerprinting)
+ *   • lastUsedAt, lastActivityAt (activity tracking)
+ *   • idleExpiresAt, expiresAt (timeout enforcement)
+ *   • revokedAt, revokedReason (audit trail)
+ *   • replacedBySessionId (token rotation chain)
+ *   • createdAt, updatedAt (timestamps)
+ *
+ * Mongoose timestamps are disabled (timestamps: false) because dates are
+ * managed manually and encrypted alongside all other fields.
+ * ============================================================================
+ */
+
+/**
  * server/src/models/RefreshSession.js
  *
  * Strict encrypted refresh session schema.

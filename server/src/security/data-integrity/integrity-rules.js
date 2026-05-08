@@ -1,6 +1,33 @@
 'use strict';
 
 /**
+ * ============================================================================
+ * CONTRIBUTION: Data Integrity — Integrity Rules / MAC Policy (Sifat)
+ * ============================================================================
+ *
+ * Security Feature : ✔ Data Integrity (MAC)
+ * Responsibility   : MAC (CBC-MAC) — Policy definition & input validation
+ *
+ * This file defines the MAC policy — what fields must be present in a MAC
+ * context and in an encrypted envelope before a MAC tag can be generated.
+ *
+ * Key contributions in this file:
+ *   1. REQUIRED_MAC_CONTEXT_FIELDS  — The minimum context fields (modelName,
+ *                                      fieldName, ownerId) needed for MAC.
+ *   2. REQUIRED_ENVELOPE_FIELDS     — The encrypted envelope must contain
+ *                                      algorithm, keyId, and ciphertext.
+ *   3. MAC_ALGORITHM / MAC_VERSION  — Constants identifying the MAC scheme
+ *                                      ('CBC-MAC-AES-128', version 1).
+ *   4. normalizeMacContext()        — Sanitizes and uppercases model names,
+ *                                      trims whitespace from context fields.
+ *   5. validateMacContext()         — Throws if required context fields are
+ *                                      missing (prevents accidental omissions).
+ *   6. validateEnvelopeForMac()     — Throws if envelope is missing algorithm,
+ *                                      keyId, or ciphertext.
+ * ============================================================================
+ */
+
+/**
  * server/src/security/integrity/macPolicy.js
  *
  * Feature 19: Integrity Verification / MAC Policy

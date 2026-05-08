@@ -1,6 +1,40 @@
 'use strict';
 
 /**
+ * ============================================================================
+ * CONTRIBUTION: Secure Storage Layer — Storage Engine (Sifat)
+ * ============================================================================
+ *
+ * Security Feature : ✔ Data Integrity (MAC) + Secure Storage
+ * Responsibility   : Secure Storage Layer — Main encrypt/decrypt wrapper
+ *
+ * This is the central storage engine that enforces the strict encryption
+ * rule: only MongoDB _id may remain readable; every other field is
+ * encrypted before save and decrypted after read.
+ *
+ * Key contributions in this file:
+ *   1. encryptSensitiveFields()      — Iterates over a model's storage policy,
+ *                                       encrypts each sensitive field using
+ *                                       RSA/ECC, and attaches a CBC-MAC tag.
+ *   2. decryptSensitiveFields()      — Decrypts all encrypted envelopes and
+ *                                       asserts MAC validity before returning
+ *                                       plaintext (integrity check on read).
+ *   3. encryptFieldForStorage()      — Encrypts a single field value and wraps
+ *                                       it in a storage envelope with MAC.
+ *   4. decryptFieldFromStorage()     — Validates MAC then decrypts a single
+ *                                       encrypted field envelope.
+ *   5. encryptManySensitiveFields()  — Batch encryption for arrays of records.
+ *   6. decryptManySensitiveFields()  — Batch decryption for arrays of records.
+ *   7. isEncryptedStorageEnvelope()  — Detects whether a value is already an
+ *                                       encrypted envelope (prevents double
+ *                                       encryption).
+ *   8. Owner ID resolution           — Enforces that every encrypted record
+ *                                       (except system models) must have an
+ *                                       explicit ownerId for key scoping.
+ * ============================================================================
+ */
+
+/**
  * server/src/security/storage/encryptedDataStorage.js
  *
  * Feature 18 + Feature 19 storage wrapper.

@@ -1,6 +1,42 @@
 'use strict';
 
 /**
+ * ============================================================================
+ * CONTRIBUTION: Data Integrity — Integrity Checker Service (Sifat)
+ * ============================================================================
+ *
+ * Security Feature : ✔ Data Integrity (MAC)
+ * Responsibility   : MAC (CBC-MAC) — Field-level & document-level verification
+ *
+ * This module provides the public API for creating and verifying MAC tags
+ * on encrypted fields and entire documents. It sits between the CBC-MAC
+ * engine (cbc-mac-engine.js) and the rest of the application.
+ *
+ * Key contributions in this file:
+ *   1. getMacMasterKey()              — Resolves the MAC master secret from
+ *                                        environment variables (SECURITY_MAC_MASTER_KEY).
+ *   2. stableStringify()              — Deterministic JSON serialization with
+ *                                        sorted keys so the same data always
+ *                                        produces the same MAC tag.
+ *   3. createEncryptedFieldMac()      — Builds a canonical parts array from
+ *                                        an encryption envelope + context and
+ *                                        computes its CBC-MAC tag.
+ *   4. verifyEncryptedFieldMac()      — Re-computes and timing-safe compares
+ *                                        the MAC tag on an encrypted field.
+ *   5. assertEncryptedFieldMacValid() — Throws on MAC mismatch (used by the
+ *                                        secure storage layer for decryption).
+ *   6. attachMacToEncryptedField()    — Attaches algorithm, version, and MAC
+ *                                        tag to an envelope before storage.
+ *   7. createDocumentMac()            — Computes a single MAC over an entire
+ *                                        document for whole-record integrity.
+ *   8. verifyDocumentMac()            — Verifies a document-level MAC tag.
+ *
+ * These functions ensure that any tampered ciphertext, swapped fields, or
+ * modified metadata will be caught before decryption proceeds.
+ * ============================================================================
+ */
+
+/**
  * server/src/security/integrity/mac.service.js
  *
  * Integrity Verification using CBC-MAC (AES-128-CBC).
