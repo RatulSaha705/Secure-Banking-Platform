@@ -506,9 +506,7 @@ const AdminSupportTicketsPage = () => {
               Manage Support Tickets
             </h1>
 
-            <p className="mt-2 text-gray-400">
-              Review tickets, mark progress, resolve issues, and notify users automatically.
-            </p>
+            
           </div>
 
           <div className="flex flex-wrap gap-3">
