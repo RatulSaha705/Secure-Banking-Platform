@@ -1,6 +1,37 @@
 'use strict';
 
 /**
+ * ============================================================================
+ * CONTRIBUTION: Secure Storage Layer — Document Encryptor (Sifat)
+ * ============================================================================
+ *
+ * Security Feature : ✔ Data Integrity (MAC) + Secure Storage
+ * Responsibility   : Secure Storage Layer — Document-level encryption
+ *
+ * This module provides a higher-level API for encrypting and decrypting
+ * entire documents by document type (USER, ACCOUNT, BENEFICIARY, etc.).
+ * It defines per-model security policies that list which fields must be
+ * encrypted.
+ *
+ * Key contributions in this file:
+ *   1. DEFAULT_SECURITY_POLICY       — Maps each document type to its data
+ *                                       classification and list of sensitive
+ *                                       fields (e.g., USER → username, email,
+ *                                       fullName, dateOfBirth, nid).
+ *   2. encryptDocumentFields()       — Encrypts all policy-listed fields in
+ *                                       a single document, skipping already-
+ *                                       encrypted fields.
+ *   3. decryptDocumentFields()       — Decrypts all encrypted fields in a
+ *                                       document, verifying MAC on each field.
+ *   4. encryptManyDocuments()        — Batch encryption for document arrays.
+ *   5. decryptManyDocuments()        — Batch decryption for document arrays.
+ *   6. buildFieldContext()           — Constructs the context object (owner,
+ *                                       documentId, collection) needed by the
+ *                                       MAC and encryption layers.
+ * ============================================================================
+ */
+
+/**
  * security/storage/encryptedDocument.js
  *
  * Document-level helper for encrypting/decrypting selected sensitive fields.

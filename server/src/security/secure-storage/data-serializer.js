@@ -1,6 +1,31 @@
 'use strict';
 
 /**
+ * ============================================================================
+ * CONTRIBUTION: Secure Storage Layer — Data Serializer (Sifat)
+ * ============================================================================
+ *
+ * Security Feature : ✔ Data Integrity (MAC) + Secure Storage
+ * Responsibility   : Secure Storage Layer — Safe response serialization
+ *
+ * This module prevents accidental leakage of encrypted envelopes, password
+ * hashes, private keys, or OTP codes to the frontend. It strips hidden
+ * fields and replaces un-decrypted envelopes with a placeholder string.
+ *
+ * Key contributions in this file:
+ *   1. DEFAULT_HIDDEN_FIELDS     — List of field names that must never reach
+ *                                   the client (password, passwordHash, salt,
+ *                                   otp, privateKey, etc.).
+ *   2. removeHiddenFields()      — Recursively walks a document/array and
+ *                                   removes hidden fields; replaces any
+ *                                   still-encrypted envelopes with
+ *                                   '[ENCRYPTED_FIELD_NOT_DECRYPTED]'.
+ *   3. serializeForClient()      — Convenience wrapper that applies the
+ *                                   default (or custom) hidden-field list.
+ * ============================================================================
+ */
+
+/**
  * security/storage/secureSerializer.js
  *
  * Safe response serializer.

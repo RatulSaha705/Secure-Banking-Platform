@@ -1,6 +1,46 @@
 'use strict';
 
 /**
+ * ============================================================================
+ * CONTRIBUTION: Session Management — Token Service (Sifat)
+ * ============================================================================
+ *
+ * Security Feature : ✔ Session Security
+ * Responsibility   : Session Management — Encrypted session lifecycle
+ *
+ * This service manages the entire lifecycle of authenticated sessions:
+ * creation, rotation, idle-timeout extension, and revocation. All session
+ * data is fully encrypted in MongoDB (only _id is readable).
+ *
+ * Key contributions in this file:
+ *   1. createLoginSession()       — Generates a refresh token, hashes it with
+ *                                    CBC-MAC, builds a session document with
+ *                                    IP/user-agent/timestamps, encrypts it,
+ *                                    and stores it in MongoDB.
+ *   2. rotateRefreshSession()     — Implements refresh-token rotation:
+ *                                    a. Decrypts all sessions and finds the
+ *                                       matching hash (timing-safe compare)
+ *                                    b. Validates status, expiry, idle timeout
+ *                                    c. Creates a new session, revokes the old
+ *                                    d. Returns fresh access + refresh tokens
+ *   3. touchSessionActivity()     — Extends the idle timeout on user activity
+ *                                    (resets idleExpiresAt to now + idle TTL).
+ *   4. revokeRefreshSession()     — Revokes a session by refresh-token (used
+ *                                    during logout).
+ *   5. revokeSessionById()        — Revokes a session by _id (used by
+ *                                    middleware for expired/mismatched sessions).
+ *   6. generateAccessToken()      — Signs a short-lived JWT (HS256) containing
+ *                                    userId, role, and sessionId.
+ *   7. hashRefreshToken()         — Hashes the refresh token with CBC-MAC
+ *                                    (not stored in plaintext).
+ *   8. Cookie helpers             — Sets/clears httpOnly, secure, sameSite
+ *                                    cookies for the refresh token.
+ *   9. Idle timeout config        — Configurable via SESSION_IDLE_TIMEOUT_MINUTES
+ *                                    (default: 5 minutes).
+ * ============================================================================
+ */
+
+/**
  * server/src/services/tokenService.js
  *
  * Strict encrypted session management — Feature 4.

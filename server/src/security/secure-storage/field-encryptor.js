@@ -1,6 +1,38 @@
 'use strict';
 
 /**
+ * ============================================================================
+ * CONTRIBUTION: Secure Storage Layer — Field Encryptor (Sifat)
+ * ============================================================================
+ *
+ * Security Feature : ✔ Data Integrity (MAC) + Secure Storage
+ * Responsibility   : Secure Storage Layer — Field-level encryption/decryption
+ *
+ * This module handles the encryption and decryption of individual field
+ * values. It selects RSA or ECC based on the active key metadata, serializes
+ * the plaintext, encrypts it, and wraps the result in an envelope with a
+ * CBC-MAC tag for integrity protection.
+ *
+ * Key contributions in this file:
+ *   1. encryptField()           — Looks up the active key for a data type,
+ *                                  serializes the value, encrypts with RSA
+ *                                  or ECC, and attaches a CBC-MAC tag.
+ *   2. decryptField()           — Verifies the MAC tag, retrieves the private
+ *                                  key, decrypts the ciphertext, and
+ *                                  deserializes the original value.
+ *   3. isEncryptedField()       — Checks whether a value is already an
+ *                                  encrypted envelope (prevents double
+ *                                  encryption).
+ *   4. serializePlainValue()    — Wraps any JS value (string, number, array,
+ *                                  object, null) into a typed JSON string
+ *                                  for safe round-trip serialization.
+ *   5. Owner mismatch guard     — On decryption, verifies that the envelope's
+ *                                  ownerUserId matches the key's owner to
+ *                                  prevent cross-user data access.
+ * ============================================================================
+ */
+
+/**
  * security/storage/encryptedField.js
  *
  * Field-level encryption wrapper for the secure banking project.

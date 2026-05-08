@@ -1,6 +1,46 @@
 'use strict';
 
 /**
+ * ============================================================================
+ * CONTRIBUTION: RBAC + Session Management — Auth Middleware (Sifat)
+ * ============================================================================
+ *
+ * Security Features:
+ *   ✔ Access Control (RBAC)   — Role-based route protection
+ *   ✔ Session Security        — JWT + encrypted session validation
+ *
+ * Responsibilities:
+ *   • RBAC             — Enforces role-based access on every protected route
+ *   • Session Mgmt     — Validates Bearer tokens and encrypted sessions
+ *
+ * This middleware is the gateway for all authenticated API requests. It
+ * verifies JWT access tokens, loads the encrypted session from MongoDB,
+ * decrypts it, checks session status / expiry / idle timeout, then loads
+ * and decrypts the user document for role-based authorization.
+ *
+ * Key contributions in this file:
+ *   1. requireAuth            — Full authentication pipeline:
+ *                                 a. Extracts Bearer token from Authorization header
+ *                                 b. Verifies JWT signature (HS256)
+ *                                 c. Loads & decrypts the RefreshSession document
+ *                                 d. Validates session status (ACTIVE), expiry,
+ *                                    and idle timeout
+ *                                 e. Loads & decrypts the User document
+ *                                 f. Populates req.user (id, role, sessionId)
+ *                                    and req.auth for downstream handlers
+ *   2. requireRole(...)       — RBAC middleware factory: allows only the
+ *                                 specified roles (e.g., 'admin', 'user').
+ *   3. requireAdmin           — Shortcut for requireRole(ROLES.ADMIN).
+ *   4. requireUser            — Shortcut for requireRole(ROLES.USER).
+ *   5. requireOwnerOrAdmin    — Ownership-based access control: allows
+ *                                 admins or the resource owner (matched via
+ *                                 params, body, query, or custom resolver).
+ *   6. Session auto-revoke    — Automatically revokes sessions on mismatch,
+ *                                 expiry, idle timeout, or inactive users.
+ * ============================================================================
+ */
+
+/**
  * server/src/middleware/authMiddleware.js
  *
  * JWT Authentication + RBAC middleware.
